@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Super Admin — Gestion des bibliothèques</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{min-height:100vh;font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.6}
+    :root{
+      --bg:#0a0a0f;--bg2:#111118;--bg3:#1a1a28;
+      --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
+      --text:rgba(255,255,255,.9);--muted:rgba(255,255,255,.45);--faint:rgba(255,255,255,.15);
+      --accent:#6366f1;--accent2:#8b5cf6;--glow:rgba(99,102,241,.35);
+      --ok:#4ade80;--err:#f87171;--warn:#fbbf24;
+      --r:14px;--rs:10px;
+    }
+    body{background:var(--bg);color:var(--text)}
+
+    /* LOGIN */
+    #login-view{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 65% 25%,#1e1b4b 0%,var(--bg) 65%);padding:24px;position:relative;overflow:hidden}
+    #login-view::before{content:'';position:absolute;top:-30%;right:-15%;width:70vw;height:70vw;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,.1) 0%,transparent 65%);pointer-events:none}
+    .login-card{background:rgba(255,255,255,.04);backdrop-filter:blur(32px);border:1px solid var(--border2);border-radius:24px;padding:52px 48px;width:100%;max-width:440px;position:relative;z-index:1;box-shadow:0 40px 100px rgba(0,0,0,.7)}
+    .login-icon{width:76px;height:76px;border-radius:20px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 24px;box-shadow:0 12px 40px var(--glow)}
+    .login-title{font-family:'Cormorant Garamond',serif;font-size:36px;font-weight:700;color:white;text-align:center;margin-bottom:6px;letter-spacing:-.5px}
+    .login-title span{color:#a5b4fc}
+    .login-sub{color:var(--muted);text-align:center;font-size:13px;margin-bottom:36px}
+
+    /* FORM */
+    .fg{margin-bottom:18px}
+    .fg label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+    .fi{width:100%;padding:12px 16px;border-radius:var(--rs);font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:all .2s;background:rgba(255,255,255,.06);border:1px solid var(--border2);color:var(--text)}
+    .fi::placeholder{color:var(--faint)}
+    .fi:focus{border-color:rgba(165,180,252,.6);background:rgba(255,255,255,.09);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+    .fi-d{background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--text)}
+    .fi-d:focus{border-color:rgba(165,180,252,.5);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+
+    /* BUTTONS */
+    .btn-p{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 22px;border:none;border-radius:var(--rs);background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap}
+    .btn-p:hover{transform:translateY(-1px);box-shadow:0 8px 24px var(--glow)}
+    .btn-p:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+    .btn-p.full{width:100%}
+    .btn-g{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.07);color:var(--muted);border:1px solid var(--border);border-radius:var(--rs);padding:9px 18px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s}
+    .btn-g:hover{background:rgba(255,255,255,.12);color:var(--text)}
+    .btn-d{display:inline-flex;align-items:center;gap:6px;background:rgba(239,68,68,.12);color:var(--err);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:7px 14px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
+    .btn-d:hover{background:rgba(239,68,68,.22)}
+    .btn-ok{display:inline-flex;align-items:center;gap:6px;background:rgba(34,197,94,.12);color:var(--ok);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:7px 14px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
+    .btn-ok:hover{background:rgba(34,197,94,.22)}
+    .btn-sm{padding:7px 14px;font-size:13px}
+
+    /* PANEL */
+    #panel-view{display:none}
+    .pnav{background:rgba(255,255,255,.025);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 32px;height:64px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:100}
+    .pnav-logo{display:flex;align-items:center;gap:10px}
+    .pnav-ico{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+    .pnav-name{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:white}
+    .pnav-name span{color:#a5b4fc}
+    .pnav-badge{background:rgba(165,180,252,.12);color:#a5b4fc;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.6px}
+    .pbody{max-width:1000px;margin:0 auto;padding:36px 24px 80px}
+
+    /* STATS */
+    .stg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:32px}
+    .stc{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:22px;text-align:center}
+    .stn{font-family:'Cormorant Garamond',serif;font-size:44px;font-weight:700;line-height:1;color:#a5b4fc}
+    .stn.g{color:var(--ok)}.stn.r{color:var(--err)}
+    .stl{font-size:12px;color:var(--muted);margin-top:6px}
+
+    /* SECTION */
+    .sec-t{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--text);margin-bottom:18px;display:flex;align-items:center;gap:10px}
+
+    /* CREATE */
+    .cpanel{background:var(--bg2);border:1px solid var(--border);border-radius:18px;padding:28px;margin-bottom:32px}
+    .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .fgrid .full{grid-column:1/-1}
+    .note{font-size:11px;color:var(--muted);margin-top:5px}
+    .errmsg{color:var(--err);font-size:13px;margin-top:8px;min-height:18px}
+    .sucmsg{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:14px 18px;color:var(--ok);font-size:13px;line-height:1.8;margin-top:16px;display:none}
+
+    /* SPACE ITEMS */
+    .sitm{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 24px;display:flex;align-items:center;gap:18px;margin-bottom:12px;transition:all .2s}
+    .sitm:hover{border-color:var(--border2);background:var(--bg3)}
+    .sico{width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+    .sname{font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px}
+    .spill{font-family:monospace;font-size:12px;background:rgba(255,255,255,.07);color:var(--muted);padding:2px 9px;border-radius:6px}
+    .bact{background:rgba(34,197,94,.12);color:var(--ok);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+    .bina{background:rgba(239,68,68,.12);color:var(--err);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+
+    /* WARN */
+    .warnbox{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:12px;padding:16px 20px;color:var(--warn);font-size:13px;line-height:1.6;margin-bottom:24px;display:none;align-items:center;gap:14px;flex-wrap:wrap}
+
+    /* MODAL */
+    .mov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(8px)}
+    .mov.open{display:flex}
+    .modal{background:var(--bg3);border:1px solid var(--border2);border-radius:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.7)}
+    .mhd{padding:22px 26px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .mhd h3{font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--text)}
+    .mcl{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:rgba(255,255,255,.07);border-radius:8px;cursor:pointer;font-size:16px;color:var(--muted);transition:all .2s}
+    .mcl:hover{background:rgba(255,255,255,.12);color:var(--text)}
+    .mbdy{padding:22px 26px}
+    .mft{padding:14px 26px 22px;display:flex;gap:10px;justify-content:flex-end}
+
+    /* DIAG */
+    .diagbox{display:none;margin-top:14px;background:rgba(0,0,0,.5);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:11px;color:var(--muted);line-height:2.2;font-family:monospace;word-break:break-all}
+
+    /* SPIN */
+    .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:white;border-radius:50%;animation:sp .7s linear infinite;vertical-align:middle;margin-right:6px}
+    @keyframes sp{to{transform:rotate(360deg)}}
+
+    .sw{width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.2);cursor:pointer;transition:transform .15s;flex-shrink:0}
+    .sw:hover{transform:scale(1.2)}
+
+    /* Journal migration */
+    .mig-log{background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px 16px;font-family:monospace;font-size:11px;line-height:2;color:rgba(255,255,255,.6);max-height:280px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:14px}
+    .mig-log .ok{color:#4ade80}.mig-log .err{color:#f87171}.mig-log .warn{color:#fbbf24}.mig-log .info{color:#a5b4fc}
+    .mig-warn{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:12px 16px;color:#fbbf24;font-size:12px;line-height:1.7;margin-bottom:16px}
+    .mig-suc{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:14px 16px;color:#4ade80;font-size:13px;line-height:1.8;margin-top:14px;display:none}
+    .modal-lg{max-width:620px}
+    .input-row{display:flex;gap:8px;align-items:center}
+    .input-row .fi{flex:1;margin:0}
+    .btn-regen{background:rgba(165,180,252,.12);color:#a5b4fc;border:1px solid rgba(165,180,252,.2);border-radius:var(--rs);padding:12px 14px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .2s}
+    .btn-regen:hover{background:rgba(165,180,252,.2)}
+
+    @media(max-width:640px){
+      .stg{grid-template-columns:1fr 1fr}
+      .fgrid{grid-template-columns:1fr}
+      .login-card{padding:36px 24px}
+      .pnav{padding:0 16px}
+      .pbody{padding:20px 14px 60px}
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-view">
+  <div class="login-card">
+    <div class="login-icon">🏛️</div>
+    <div class="login-title">Super<span>Admin</span></div>
+    <p class="login-sub">Panneau de gestion des bibliothèques</p>
+    <div class="fg">
+      <label>Mot de passe maître</label>
+      <input type="password" id="sa-pwd" class="fi" placeholder="Entrez le mot de passe…" autocomplete="current-password"/>
+    </div>
+    <button id="sa-btn" class="btn-p full" onclick="saLogin()">Accéder au panneau →</button>
+    <p id="sa-err" style="color:var(--err);font-size:13px;text-align:center;margin-top:14px;min-height:18px"></p>
+    <button type="button" onclick="saDiagnose()" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer;margin-top:8px;width:100%;font-family:inherit;text-decoration:underline">🔍 Diagnostiquer la connexion</button>
+    <div id="sa-diag" class="diagbox"></div>
+    <p style="text-align:center;color:var(--faint);font-size:11px;margin-top:20px">Mot de passe par défaut : <strong style="color:var(--muted)">Admin2025</strong></p>
+  </div>
+</div>
+
+<!-- PANEL -->
+<div id="panel-view">
+  <nav class="pnav">
+    <div class="pnav-logo">
+      <div class="pnav-ico">🏛️</div>
+      <div class="pnav-name">Super<span>Admin</span></div>
+      <span class="pnav-badge">MASTER</span>
+    </div>
+    <div style="flex:1"></div>
+    <span style="color:var(--muted);font-size:13px;margin-right:12px" id="nav-count"></span>
+    <button class="btn-g btn-sm" style="margin-right:8px" onclick="openM('m-pwd')">🔑 Mot de passe</button>
+    <button class="btn-g btn-sm" onclick="doLogout()">← Quitter</button>
+  </nav>
+
+  <div class="pbody">
+
+    <!-- Avertissement mot de passe par défaut -->
+    <div id="warn-pwd" class="warnbox">
+      <span style="font-size:22px">⚠️</span>
+      <div style="flex:1"><strong>Vous utilisez le mot de passe par défaut (Admin2025).</strong><br>Changez-le pour sécuriser l'accès super-admin.</div>
+      <button class="btn-p" style="width:auto;padding:9px 18px;font-size:13px" onclick="openM('m-pwd')">🔑 Changer</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="stg">
+      <div class="stc"><div class="stn" id="st-tot">—</div><div class="stl">Bibliothèques</div></div>
+      <div class="stc"><div class="stn g" id="st-act">—</div><div class="stl">Actives</div></div>
+      <div class="stc"><div class="stn r" id="st-ina">—</div><div class="stl">Inactives</div></div>
+    </div>
+
+    <!-- Créer -->
+    <div class="cpanel">
+      <div class="sec-t">➕ Créer une nouvelle bibliothèque</div>
+      <div class="fgrid">
+        <div class="full">
+          <div class="fg">
+            <label>Code unique <span style="color:var(--err)">*</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="fi fi-d" id="n-code" placeholder="Code généré automatiquement…" autocapitalize="none" spellcheck="false" style="flex:1" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+              <button type="button" onclick="document.getElementById('n-code').value=genCode()" style="background:rgba(165,180,252,.12);color:#a5b4fc;border:1px solid rgba(165,180,252,.2);border-radius:var(--rs);padding:11px 14px;cursor:pointer;font-size:14px;white-space:nowrap;font-family:inherit;transition:all .2s" title="Générer un nouveau code">🔄</button>
+            </div>
+            <p class="note">URL d'accès : votresite.netlify.app/<strong>code</strong> — Le code est généré aléatoirement pour la sécurité.</p>
+          </div>
+        </div>
+        <div class="fg">
+          <label>Nom complet <span style="color:var(--err)">*</span></label>
+          <input class="fi fi-d" id="n-name" placeholder="Bibliothèque Centre Lumière"/>
+        </div>
+        <div class="fg">
+          <label>Nom court / Navbar <span style="color:var(--err)">*</span></label>
+          <input class="fi fi-d" id="n-short" placeholder="LumièreBiblio"/>
+        </div>
+        <div class="fg">
+          <label>Tagline</label>
+          <input class="fi fi-d" id="n-tag" placeholder="Bibliothèque · Centre Lumière"/>
+        </div>
+        <div class="fg">
+          <label>Code admin initial <span style="color:var(--err)">*</span></label>
+          <input class="fi fi-d" id="n-adm" placeholder="admin, directeur…" autocapitalize="none" spellcheck="false" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')"/>
+          <p class="note">Code de connexion du premier administrateur</p>
+        </div>
+        <div class="fg">
+          <label>Couleur d'accent</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="color" id="n-color" style="width:44px;height:44px;border-radius:10px;border:2px solid rgba(255,255,255,.2);cursor:pointer;padding:2px;background:transparent;flex-shrink:0" oninput="updateColorPreview('n-color')" title="Couleur personnalisée"/><button type="button" onclick="pickColor('n-color','#22806B')" title="Vert" style="width:32px;height:32px;border-radius:8px;background:#22806B;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#1C4370')" title="Marine" style="width:32px;height:32px;border-radius:8px;background:#1C4370;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#6366f1')" title="Indigo" style="width:32px;height:32px;border-radius:8px;background:#6366f1;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#8b5cf6')" title="Violet" style="width:32px;height:32px;border-radius:8px;background:#8b5cf6;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#be185d')" title="Rose" style="width:32px;height:32px;border-radius:8px;background:#be185d;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#0891b2')" title="Cyan" style="width:32px;height:32px;border-radius:8px;background:#0891b2;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#d97706')" title="Orange" style="width:32px;height:32px;border-radius:8px;background:#d97706;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#059669')" title="Émeraude" style="width:32px;height:32px;border-radius:8px;background:#059669;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#dc2626')" title="Rouge" style="width:32px;height:32px;border-radius:8px;background:#dc2626;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('n-color','#0f172a')" title="Noir" style="width:32px;height:32px;border-radius:8px;background:#0f172a;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><span id="n-color-preview" style="font-size:12px;color:var(--muted);margin-left:4px"></span></div>
+          </div>
+        </div>
+      </div>
+      <p id="c-err" class="errmsg"></p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+        <button id="c-btn" class="btn-p" style="padding:11px 24px" onclick="createSpace()">🚀 Créer la bibliothèque</button>
+        <button class="btn-g" onclick="clearForm()">✕ Effacer</button>
+      </div>
+      <div id="c-suc" class="sucmsg"></div>
+    </div>
+
+    <!-- Liste -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div class="sec-t" style="margin-bottom:0">📚 Bibliothèques <span style="font-family:'DM Sans',sans-serif;font-size:14px;font-weight:400;color:var(--muted);margin-left:6px" id="list-count"></span></div>
+      <button class="btn-g btn-sm" onclick="loadSpaces()">🔄</button>
+    </div>
+    <div id="spaces-list"><div style="text-align:center;padding:48px;color:var(--muted)">⏳ Chargement…</div></div>
+
+  </div>
+</div>
+
+<!-- Modal : renommer une bibliothèque (migration Firebase) -->
+<div class="mov" id="m-rename">
+  <div class="modal modal-lg">
+    <div class="mhd"><h3>🔄 Renommer l'espace</h3><button class="mcl" onclick="cM('m-rename')">✕</button></div>
+    <div class="mbdy">
+      <div class="mig-warn">
+        ⚠️ <strong>Cette opération migre toutes les données Firebase.</strong><br>
+        L'ancien code sera supprimé. L'URL d'accès changera. Mettez à jour <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px">DEFAULT_SPACE</code> dans <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px">index.html</code> après.
+      </div>
+      <div class="fg">
+        <label>Ancien code (actuel)</label>
+        <input class="fi" id="r-old" readonly style="opacity:.5;cursor:not-allowed"/>
+      </div>
+      <div class="fg">
+        <label>Nouveau code sécurisé <span style="color:var(--err)">*</span></label>
+        <div class="input-row" style="margin-bottom:6px">
+          <input class="fi fi-d" id="r-new" placeholder="ex: a3f9-b2c1-d8e4" autocapitalize="none" spellcheck="false" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+          <button class="btn-regen" onclick="document.getElementById('r-new').value=genCode()">🔄 Générer</button>
+        </div>
+        <p style="font-size:11px;color:var(--muted)">Minuscules, chiffres, tirets. Nouveau lien : votresite.netlify.app/<strong id="r-preview">…</strong></p>
+      </div>
+      <p id="r-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
+      <div class="mig-log" id="r-log" style="display:none"></div>
+      <div class="mig-suc" id="r-suc"></div>
+    </div>
+    <div class="mft" id="r-foot">
+      <button class="btn-g" onclick="cM('m-rename')">Annuler</button>
+      <button id="r-btn" class="btn-p" style="padding:10px 22px" onclick="startRename()">🚀 Lancer la migration</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal : éditer une bibliothèque -->
+<div class="mov" id="m-edit">
+  <div class="modal" style="max-width:560px">
+    <div class="mhd"><h3>✏️ Modifier la bibliothèque</h3><button class="mcl" onclick="cM('m-edit')">✕</button></div>
+    <div class="mbdy">
+      <input type="hidden" id="e-code"/>
+      <div class="fg">
+        <label>Code URL <span style="font-size:11px;color:var(--muted)">(non modifiable)</span></label>
+        <input class="fi" id="e-code-display" readonly style="opacity:.5;cursor:not-allowed"/>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="fg">
+          <label>Nom complet <span style="color:var(--err)">*</span></label>
+          <input class="fi" id="e-name" placeholder="Nom complet…"/>
+        </div>
+        <div class="fg">
+          <label>Nom court / Navbar <span style="color:var(--err)">*</span></label>
+          <input class="fi" id="e-short" placeholder="Nom court…"/>
+        </div>
+      </div>
+      <div class="fg">
+        <label>Tagline</label>
+        <input class="fi" id="e-tag" placeholder="Sous-titre affiché à la connexion…"/>
+      </div>
+      <div class="fg">
+        <label>Couleur d'accent</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="color" id="e-color" style="width:44px;height:44px;border-radius:10px;border:2px solid rgba(255,255,255,.2);cursor:pointer;padding:2px;background:transparent;flex-shrink:0" oninput="updateColorPreview('e-color')" title="Couleur personnalisée"/><button type="button" onclick="pickColor('e-color','#22806B')" title="Vert" style="width:32px;height:32px;border-radius:8px;background:#22806B;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#1C4370')" title="Marine" style="width:32px;height:32px;border-radius:8px;background:#1C4370;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#6366f1')" title="Indigo" style="width:32px;height:32px;border-radius:8px;background:#6366f1;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#8b5cf6')" title="Violet" style="width:32px;height:32px;border-radius:8px;background:#8b5cf6;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#be185d')" title="Rose" style="width:32px;height:32px;border-radius:8px;background:#be185d;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#0891b2')" title="Cyan" style="width:32px;height:32px;border-radius:8px;background:#0891b2;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#d97706')" title="Orange" style="width:32px;height:32px;border-radius:8px;background:#d97706;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#059669')" title="Émeraude" style="width:32px;height:32px;border-radius:8px;background:#059669;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#dc2626')" title="Rouge" style="width:32px;height:32px;border-radius:8px;background:#dc2626;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#0f172a')" title="Noir" style="width:32px;height:32px;border-radius:8px;background:#0f172a;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><span id="e-color-preview" style="font-size:12px;color:var(--muted);margin-left:4px"></span></div>
+        </div>
+      </div>
+      <p id="e-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
+    </div>
+    <div class="mft">
+      <button class="btn-g" onclick="cM('m-edit')">Annuler</button>
+      <button id="e-btn" class="btn-p" style="padding:10px 22px" onclick="saveEdit()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal : changer mot de passe -->
+<div class="mov" id="m-pwd">
+  <div class="modal">
+    <div class="mhd"><h3>🔑 Changer le mot de passe</h3><button class="mcl" onclick="cM('m-pwd')">✕</button></div>
+    <div class="mbdy">
+      <p style="color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.6">Stocké en hash SHA-256 dans Firebase. Valable sur <strong style="color:var(--text)">tous les navigateurs et appareils</strong>. Min. 6 caractères.</p>
+      <div class="fg"><label>Nouveau mot de passe</label><input type="password" id="p-new" class="fi" placeholder="Min. 6 caractères…"/></div>
+      <div class="fg"><label>Confirmer</label><input type="password" id="p-conf" class="fi" placeholder="Répéter…"/></div>
+      <p id="p-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
+    </div>
+    <div class="mft">
+      <button class="btn-g" onclick="cM('m-pwd')">Annuler</button>
+      <button id="p-btn" class="btn-p" style="padding:10px 22px" onclick="changePwd()">💾 Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const FB_API_KEY='AIzaSyBIqsfTSS3ypsHc_dQrKhYpB8pIbF9adBY';
+const FB_PROJECT='comoe-biblio-f28d7';
+const FS_ROOT=`https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+const BATCH_URL=`${FS_ROOT}:batchWrite`;
+let fbToken=null;
+const SA_DEFAULT_HASH='f0d69d50df9d46dbb367d8ab8265d051e4e15cd15277230b5c8cd0b0aba18fca';
+
+/* Firestore helpers */
+function tv(v){
+  if(v===null||v===undefined)return{nullValue:null};
+  if(typeof v==='boolean')return{booleanValue:v};
+  if(typeof v==='number')return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
+  if(typeof v==='string')return{stringValue:v};
+  if(Array.isArray(v))return{arrayValue:{values:v.map(tv)}};
+  if(typeof v==='object')return{mapValue:{fields:tf(v)}};
+  return{stringValue:String(v)};
+}
+function tf(obj){const f={};for(const[k,v]of Object.entries(obj))f[k]=tv(v);return f;}
+function fd(doc){
+  if(!doc?.fields)return{};
+  const o={};
+  for(const[k,v]of Object.entries(doc.fields)){
+    if('stringValue'in v)o[k]=v.stringValue;
+    else if('booleanValue'in v)o[k]=v.booleanValue;
+    else if('integerValue'in v)o[k]=parseInt(v.integerValue);
+    else if('nullValue'in v)o[k]=null;
+    else if('arrayValue'in v)o[k]=(v.arrayValue.values||[]).map(i=>i.stringValue??i.integerValue??null);
+    else o[k]=v;
+  }
+  return o;
+}
+function fbH(){const h={'Content-Type':'application/json'};if(fbToken)h['Authorization']='Bearer '+fbToken;return h;}
+
+async function fbAuth(){
+  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`,{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({returnSecureToken:true})
+  });
+  const d=await r.json();
+  if(!d.idToken)throw new Error('Auth Firebase : '+(d.error?.message||'Échec'));
+  fbToken=d.idToken;
+}
+
+async function sha256(s){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+/* Génération d'un code unique sécurisé */
+function pickColor(inputId, color){
+  const el=document.getElementById(inputId);
+  if(el){el.value=color;updateColorPreview(inputId);}
+}
+function updateColorPreview(inputId){
+  const el=document.getElementById(inputId);
+  const prev=document.getElementById(inputId+'-preview');
+  if(el&&prev){
+    prev.textContent=el.value;
+    prev.style.color=el.value;
+    prev.style.fontWeight='700';
+  }
+  /* Mettre en évidence le swatch sélectionné */
+  const parent=el?.parentElement;
+  if(parent){
+    parent.querySelectorAll('button[type="button"]').forEach(btn=>{
+      const bg=btn.style.background;
+      btn.style.border=bg===el.value||bg.toLowerCase()===el.value?'3px solid white':'2px solid rgba(255,255,255,.15)';
+      btn.style.boxShadow=bg===el.value||bg.toLowerCase()===el.value?'0 0 0 2px '+el.value:'none';
+    });
+  }
+}
+
+function genCode(){
+  /* Format : 3 segments hex de 4 chars = 12 chars hex difficile à deviner */
+  const arr=new Uint8Array(6);
+  crypto.getRandomValues(arr);
+  const hex=Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
+  /* Insérer des tirets pour lisibilité : xxxx-xxxx-xxxx */
+  return hex.substring(0,4)+'-'+hex.substring(4,8)+'-'+hex.substring(8,12);
+}
+
+/* Init */
+async function init(){
+  try{
+    await fbAuth();
+    console.log('[SA] Auth OK');
+  }catch(e){
+    document.getElementById('sa-err').textContent='Firebase inaccessible : '+e.message;
+  }
+  document.getElementById('sa-pwd').addEventListener('keypress',e=>{if(e.key==='Enter')saLogin();});
+}
+
+/* Lecture du hash stocké */
+async function getStoredHash(){
+  try{
+    const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{headers:fbH()});
+    console.log('[SA] __superadmin__ HTTP',r.status);
+    if(r.status===404)return{hash:SA_DEFAULT_HASH,isDefault:true};
+    if(r.ok){
+      const doc=fd(await r.json());
+      if(doc?.pwdHash)return{hash:doc.pwdHash,isDefault:false};
+    }else{
+      const e=await r.json().catch(()=>({}));
+      console.warn('[SA] Firebase',r.status,e?.error?.message||'');
+    }
+  }catch(e){console.warn('[SA]',e.message);}
+  return{hash:SA_DEFAULT_HASH,isDefault:true};
+}
+
+async function saLogin(){
+  const pwd=document.getElementById('sa-pwd').value.trim();
+  const errEl=document.getElementById('sa-err');
+  const btn=document.getElementById('sa-btn');
+  if(!pwd){errEl.textContent='Veuillez saisir le mot de passe.';return;}
+  errEl.textContent='Vérification…';btn.disabled=true;
+  try{
+    if(!fbToken)await fbAuth();
+    const h=await sha256(pwd);
+    const{hash:ref,isDefault}=await getStoredHash();
+    console.log('[SA] Saisi:',h.substring(0,12),'— Ref:',ref.substring(0,12),'— Match:',h===ref);
+    if(h!==ref){
+      errEl.innerHTML=isDefault
+        ?'Mot de passe incorrect. <span style="opacity:.6;font-size:12px">Par défaut : <strong>Admin2025</strong></span>'
+        :'Mot de passe incorrect.';
+      return;
+    }
+    errEl.textContent='';
+    document.getElementById('login-view').style.display='none';
+    document.getElementById('panel-view').style.display='block';
+    loadSpaces();
+    /* Pré-remplir le champ code avec une valeur aléatoire */
+    const codeEl=document.getElementById('n-code');
+    if(codeEl&&!codeEl.value)codeEl.value=genCode();
+    if(isDefault)setTimeout(()=>{document.getElementById('warn-pwd').style.display='flex';},500);
+  }catch(e){errEl.textContent='Erreur : '+e.message;console.error(e);}
+  finally{btn.disabled=false;}
+}
+
+async function saDiagnose(){
+  const el=document.getElementById('sa-diag');
+  el.style.display='block';el.textContent='⏳ Diagnostic…';
+  try{
+    if(!fbToken)try{await fbAuth();}catch(e){}
+    const tok=fbToken?('✅ '+fbToken.substring(0,16)+'...'):'❌ ABSENT';
+    const hAdmin=await sha256('Admin2025');
+    const hOk=hAdmin===SA_DEFAULT_HASH?'✅ Correct':'❌ MISMATCH';
+    let fbSt='?',fbMsg='',fbHash='(non lu)';
+    try{
+      const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{headers:fbH()});
+      fbSt=r.status;
+      if(r.ok){const d=fd(await r.json());fbHash=d?.pwdHash?(d.pwdHash.substring(0,16)+'...'):'(champ absent)';}
+      else{const b=await r.json().catch(()=>({}));fbMsg=' — '+(b?.error?.message||'');}
+    }catch(e){fbSt='Réseau: '+e.message;}
+    el.innerHTML=
+      `<strong>Token Firebase</strong> : ${tok}<br>`+
+      `<strong>sha256("Admin2025")</strong> : ${hAdmin.substring(0,16)}… ${hOk}<br>`+
+      `<strong>Hash par défaut</strong>    : ${SA_DEFAULT_HASH.substring(0,16)}…<br>`+
+      `<strong>HTTP __superadmin__</strong> : ${fbSt}${fbMsg}<br>`+
+      `<strong>Hash Firebase</strong>       : ${fbHash}`;
+  }catch(e){el.textContent='❌ '+e.message;}
+}
+
+function doLogout(){
+  document.getElementById('panel-view').style.display='none';
+  document.getElementById('login-view').style.display='flex';
+  document.getElementById('sa-pwd').value='';
+  document.getElementById('sa-err').textContent='';
+  document.getElementById('sa-diag').style.display='none';
+  fbToken=null;
+}
+
+/* Espaces */
+async function loadSpaces(){
+  const list=document.getElementById('spaces-list');
+  list.innerHTML='<div style="text-align:center;padding:48px;color:var(--muted)">⏳ Chargement…</div>';
+  try{
+    const r=await fetch(`${FS_ROOT}/_spaces?pageSize=200`,{headers:fbH()});
+    const d=await r.json();
+    const all=(d.documents||[]).map(fd).filter(s=>s.code&&s.code!=='__superadmin__');
+    window._spacesCache=all;
+    /* Charger les comptages pour chaque espace en parallèle */
+    const counts={};
+    const adminCodes={};
+    await Promise.all(all.map(async s=>{
+      try{
+        const [bRes,rRes,uRes]=await Promise.all([
+          fetch(`${FS_ROOT}/spaces/${s.code}/books?pageSize=6`,{headers:fbH()}),
+          fetch(`${FS_ROOT}/spaces/${s.code}/requests?pageSize=1`,{headers:fbH()}),
+          fetch(`${FS_ROOT}/spaces/${s.code}/users/1`,{headers:fbH()})
+        ]);
+        const bData=bRes.ok?await bRes.json().catch(()=>({})):{};
+        const rData=rRes.ok?await rRes.json().catch(()=>({})):{};
+        const bookCount=(bData.documents||[]).length;
+        const hasRequests=(rData.documents||[]).length>0;
+        counts[s.code]={bookCount,hasRequests,canDelete:bookCount<5&&!hasRequests};
+        /* Code admin : lire abbrev du document users/1 */
+        if(uRes.ok){
+          const ud=await uRes.json().catch(()=>({}));
+          adminCodes[s.code]=ud?.fields?.abbrev?.stringValue||'N/A';
+        } else {
+          adminCodes[s.code]='N/A';
+        }
+      }catch(e){
+        counts[s.code]={bookCount:0,hasRequests:false,canDelete:true};
+        adminCodes[s.code]='N/A';
+      }
+    }));
+    window._spacesCounts=counts;
+    window._adminCodes=adminCodes;
+    const act=all.filter(s=>s.active!==false).length;
+    const ina=all.length-act;
+    const u=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+    u('st-tot',all.length);u('st-act',act);u('st-ina',ina);
+    u('nav-count',all.length+' espace(s)');u('list-count',all.length+' espace(s)');
+    if(!all.length){
+      list.innerHTML='<div style="text-align:center;padding:48px;color:var(--muted)">Aucune bibliothèque. Utilisez le formulaire ci-dessus.</div>';
+      return;
+    }
+    /* Codes communs facilement devinables */
+    const GUESSABLE=['comoe','admin','biblio','library','livre','book','centre','center','test','demo'];
+    list.innerHTML=all.map(s=>`
+      <div class="sitm">
+        <div class="sico" style="background:${s.color||'#6366f1'}22">${s.active!==false?'📚':'🔒'}</div>
+        <div style="flex:1;min-width:0">
+          <div class="sname">${s.name||s.short||s.code}</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px">
+            <span class="spill">/${s.code}</span>
+            <span class="${s.active!==false?'bact':'bina'}">${s.active!==false?'● Actif':'● Inactif'}</span>
+            ${GUESSABLE.includes(s.code)?'<span style="background:rgba(251,191,36,.15);color:#fbbf24;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">⚠️ Code devinable</span>':''}
+            ${s.tagline?`<span style="font-size:12px;color:var(--muted)">${s.tagline}</span>`:''}
+          </div>
+          <a href="/${s.code}" target="_blank" style="font-size:12px;color:#a5b4fc;text-decoration:none;font-weight:500;display:inline-block;margin-top:6px">🔗 ${window.location.origin}/${s.code}</a>
+          <span style="font-size:11px;color:var(--muted);margin-left:10px">🔑 <code style="background:rgba(255,255,255,.07);padding:1px 6px;border-radius:4px;color:rgba(255,255,255,.6);font-family:monospace">${(window._adminCodes||{})[s.code]||'N/A'}</code></span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-g" style="padding:6px 12px;font-size:12px" onclick="openEditByCode('${s.code}')">✏️ Modifier</button>
+          <button class="btn-g" style="padding:6px 12px;font-size:12px;color:#a5b4fc;border-color:rgba(165,180,252,.2)" onclick="openRename('${s.code}')">🔄 Renommer</button>
+          ${(()=>{
+            const cnt=(window._spacesCounts||{})[s.code];
+            if(!cnt||cnt.canDelete){
+              return '<button class="btn-ok" style="padding:6px 12px;font-size:12px" onclick="confirmDelete(\''+s.code+'\',\''+( s.name||s.short||s.code).replace(/'/g,'')+'\')">🗑️ Supprimer</button>';
+            }
+            const reason=cnt.bookCount>=5?cnt.bookCount+' livres':'demandes';
+            return '<span style="font-size:11px;color:var(--muted);padding:6px 10px;background:rgba(255,255,255,.04);border-radius:8px;border:1px solid var(--border)" title="Impossible de supprimer : '+reason+'">🔒 '+reason+'</span>';
+          })()}
+          ${s.active!==false
+            ?`<button class="btn-d" onclick="toggleSpace('${s.code}',true)">🚫 Désactiver</button>`
+            :`<button class="btn-ok" onclick="toggleSpace('${s.code}',false)">✅ Réactiver</button>`}
+        </div>
+      </div>`).join('');
+  }catch(e){list.innerHTML=`<div style="color:var(--err);padding:20px">Erreur : ${e.message}</div>`;}
+}
+
+/* Ouvrir le modal d'édition */
+function openEditByCode(code){
+  const s=(window._spacesCache||[]).find(x=>x.code===code);
+  if(s)openEdit(s);
+}
+function openEdit(s){
+  /* s peut être un objet JS ou une string JSON */
+  if(typeof s==='string'){try{s=JSON.parse(s);}catch(e){return;}}
+  document.getElementById('e-code').value=s.code||'';
+  document.getElementById('e-code-display').value='/'+( s.code||'');
+  document.getElementById('e-name').value=s.name||'';
+  document.getElementById('e-short').value=s.short||'';
+  document.getElementById('e-tag').value=s.tagline||'';
+  document.getElementById('e-color').value=s.color||'#22806B';
+  setTimeout(()=>updateColorPreview('e-color'),50);
+  document.getElementById('e-err').textContent='';
+  openM('m-edit');
+}
+
+/* Sauvegarder les modifications */
+async function saveEdit(){
+  const code=document.getElementById('e-code').value;
+  const name=document.getElementById('e-name').value.trim();
+  const short=document.getElementById('e-short').value.trim();
+  const tag=document.getElementById('e-tag').value.trim();
+  const color=document.getElementById('e-color').value;
+  const errEl=document.getElementById('e-err');
+  const btn=document.getElementById('e-btn');
+  if(!name||!short){errEl.textContent='Nom complet et nom court sont obligatoires.';return;}
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Enregistrement…';
+  try{
+    /* Mise à jour partielle via updateMask */
+    const fields=['name','short','tagline','color'];
+    const mask=fields.map(f=>'updateMask.fieldPaths='+f).join('&');
+    const r=await fetch(`${FS_ROOT}/_spaces/${code}?${mask}`,{
+      method:'PATCH',headers:fbH(),
+      body:JSON.stringify({fields:{
+        name:{stringValue:name},
+        short:{stringValue:short},
+        tagline:{stringValue:tag||name},
+        color:{stringValue:color}
+      }})
+    });
+    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    cM('m-edit');
+    loadSpaces();
+  }catch(e){errEl.textContent='Erreur : '+e.message;}
+  finally{btn.disabled=false;btn.textContent='💾 Enregistrer';}
+}
+
+/* Ouvrir le modal de renommage */
+function openRename(code){
+  document.getElementById('r-old').value=code;
+  document.getElementById('r-new').value=genCode();
+  document.getElementById('r-err').textContent='';
+  document.getElementById('r-log').style.display='none';
+  document.getElementById('r-log').innerHTML='';
+  document.getElementById('r-suc').style.display='none';
+  document.getElementById('r-btn').disabled=false;
+  document.getElementById('r-btn').textContent='🚀 Lancer la migration';
+  document.getElementById('r-foot').style.display='flex';
+  /* Mise à jour en temps réel du preview */
+  document.getElementById('r-new').oninput=function(){
+    this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');
+    document.getElementById('r-preview').textContent=this.value||'…';
+  };
+  document.getElementById('r-preview').textContent=document.getElementById('r-new').value;
+  openM('m-rename');
+}
+
+/* Journaliser dans le modal */
+function rLog(msg,type=''){
+  const el=document.getElementById('r-log');
+  el.style.display='block';
+  const span=document.createElement('span');
+  span.className=type;
+  span.textContent=msg+'\n';
+  el.appendChild(span);
+  el.scrollTop=el.scrollHeight;
+}
+
+/* Lancer la migration de renommage */
+async function startRename(){
+  const oldCode=document.getElementById('r-old').value.trim();
+  const newCode=document.getElementById('r-new').value.trim().toLowerCase();
+  const errEl=document.getElementById('r-err');
+  const btn=document.getElementById('r-btn');
+  errEl.textContent='';
+  document.getElementById('r-log').innerHTML='';
+  document.getElementById('r-log').style.display='none';
+  document.getElementById('r-suc').style.display='none';
+
+  if(!newCode){errEl.textContent='Saisissez le nouveau code.';return;}
+  if(newCode===oldCode){errEl.textContent='Le nouveau code est identique.';return;}
+  if(!/^[a-z0-9-]+$/.test(newCode)){errEl.textContent='Code invalide.';return;}
+  if(!confirm('Renommer ' + oldCode + ' en ' + newCode + ' ? Action irreversible.'))return;
+
+  btn.disabled=true;
+  btn.innerHTML='<span class="spin"></span>Migration...';
+  try{
+    rLog('1. Lecture _spaces/'+oldCode+'...','info');
+    const chkOld=await fetch(`${FS_ROOT}/_spaces/${oldCode}`,{headers:fbH()});
+    if(!chkOld.ok)throw new Error('_spaces/'+oldCode+' introuvable.');
+    const oldData=fd(await chkOld.json());
+    rLog('   OK : "'+( oldData.name||oldCode)+'"','ok');
+
+    rLog('2. Verification disponibilite de "'+newCode+'"...','info');
+    const chkNew=await fetch(`${FS_ROOT}/_spaces/${newCode}`,{headers:fbH()});
+    if(chkNew.ok){const d=await chkNew.json();if(d.fields)throw new Error('Le code "'+newCode+'" est deja utilise.');}
+    rLog('   OK : code disponible','ok');
+
+    rLog('3. Creation _spaces/'+newCode+'...','info');
+    const newSpaceData={...oldData,code:newCode};
+    const r3=await fetch(`${FS_ROOT}/_spaces/${newCode}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:tf(newSpaceData)})});
+    if(!r3.ok){const e=await r3.json();throw new Error(e.error?.message);}
+    rLog('   OK : _spaces/'+newCode+' cree','ok');
+
+    const cols=['users','config','counters','books','requests','sessions','loginLog','deletedUsers'];
+    rLog('4. Copie des donnees...','info');
+    for(const col of cols){
+      let docs=[];
+      try{
+        let pt=null;
+        do{
+          const url=`${FS_ROOT}/spaces/${oldCode}/${col}?pageSize=300`+(pt?'&pageToken='+pt:'');
+          const r=await fetch(url,{headers:fbH()});
+          if(!r.ok)break;
+          const d=await r.json().catch(()=>({}));
+          docs.push(...(d.documents||[]));
+          pt=d.nextPageToken||null;
+        }while(pt);
+      }catch(e){rLog('   avertissement '+col+' : '+e.message,'warn');continue;}
+      if(!docs.length)continue;
+      let ok=0;
+      for(const doc of docs){
+        const docId=doc.name.split('/').pop();
+        try{
+          const wr=await fetch(`${FS_ROOT}/spaces/${newCode}/${col}/${docId}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:doc.fields||{}})});
+          if(wr.ok)ok++;
+          else{const e=await wr.json().catch(()=>({}));rLog('   erreur '+col+'/'+docId+' : '+(e.error?.message||wr.status),'err');}
+        }catch(e){rLog('   erreur '+col+'/'+docId+' : '+e.message,'err');}
+      }
+      rLog('   OK '+col+' : '+ok+'/'+docs.length+' copies','ok');
+    }
+
+    rLog('5. Suppression ancien espace...','info');
+    for(const col of cols){
+      let docs=[];
+      try{
+        let pt=null;
+        do{
+          const url=`${FS_ROOT}/spaces/${oldCode}/${col}?pageSize=300`+(pt?'&pageToken='+pt:'');
+          const r=await fetch(url,{headers:fbH()});
+          if(!r.ok)break;
+          const d=await r.json().catch(()=>({}));
+          docs.push(...(d.documents||[]));
+          pt=d.nextPageToken||null;
+        }while(pt);
+      }catch(e){continue;}
+      for(const doc of docs){
+        await fetch('https://firestore.googleapis.com/v1/'+doc.name.replace(/^.*\/v1\//,''),{method:'DELETE',headers:fbH()}).catch(()=>{});
+      }
+      if(docs.length)rLog('   OK '+col+' : '+docs.length+' supprime(s)','ok');
+    }
+    await fetch(`${FS_ROOT}/spaces/${oldCode}`,{method:'DELETE',headers:fbH()}).catch(()=>{});
+    rLog('   OK document parent spaces/'+oldCode+' supprime','ok');
+    await fetch(`${FS_ROOT}/_spaces/${oldCode}`,{method:'DELETE',headers:fbH()}).catch(()=>{});
+    rLog('   OK _spaces/'+oldCode+' supprime','ok');
+
+    rLog('Migration terminee !','ok');
+    const sucEl=document.getElementById('r-suc');
+    sucEl.innerHTML='<strong>Migration reussie !</strong><br>'
+      +'Nouveau code : <code style="background:rgba(34,197,94,.15);padding:1px 7px;border-radius:4px">'+newCode+'</code><br>'
+      +'<span style="color:rgba(255,255,255,.6);font-size:12px">Dans index.html : remplacez DEFAULT_SPACE = \''+oldCode+'\' par DEFAULT_SPACE = \''+newCode+'\'</span>';
+    sucEl.style.display='block';
+    document.getElementById('r-foot').style.display='none';
+    loadSpaces();
+  }catch(e){
+    rLog('ERREUR : '+e.message,'err');
+    errEl.textContent=e.message;
+    console.error(e);
+  }finally{
+    btn.disabled=false;
+    btn.textContent='Lancer la migration';
+  }
+}
+
+async function confirmDelete(code,name){
+  const btn=event.currentTarget;
+  /* Vérifier les conditions : 0 livre + 1 seul member (admin) */
+  try{
+    /* Compter les livres */
+    const bUrl=`${FS_ROOT}/spaces/${code}/books?pageSize=1`;
+    const bRes=await fetch(bUrl,{headers:fbH()});
+    const bData=await bRes.json().catch(()=>({}));
+    const hasBooks=bData.documents&&bData.documents.length>0;
+    if(hasBooks){
+      alert('Impossible de supprimer "'+name+'" : la bibliotheque contient des livres. Supprimez tous les livres depuis l interface admin.');
+      return;
+    }
+    /* Compter les membres */
+    const uUrl=`${FS_ROOT}/spaces/${code}/users?pageSize=5`;
+    const uRes=await fetch(uUrl,{headers:fbH()});
+    const uData=await uRes.json().catch(()=>({}));
+    const userDocs=(uData.documents||[]).map(d=>{
+      const f=d.fields||{};
+      return{role:f.role?.stringValue||'',disabled:f.disabled?.booleanValue||false};
+    });
+    const activeNonAdmin=userDocs.filter(u=>u.role!=='admin'&&!u.disabled);
+    if(activeNonAdmin.length>0){
+      alert('Impossible de supprimer "'+name+'" : il reste '+activeNonAdmin.length+' membre(s) actif(s) hors admin. Supprimez-les d abord.');
+      return;
+    }
+    /* Conditions OK — demander confirmation */
+    if(!confirm('Supprimer definitivement la bibliotheque "'+name+'" (code: '+code+') ? Cette action est irreversible et supprimera tous les membres et la configuration.'))return;
+    await deleteSpace(code,name);
+  }catch(e){
+    alert('Erreur verification : '+e.message);
+  }
+}
+
+/* Suppression effective */
+async function deleteSpace(code,name){
+  try{
+    /* Collections à supprimer */
+    const collections=['users','config','counters','books','requests','sessions','loginLog','deletedUsers'];
+    for(const col of collections){
+      /* Lister et supprimer tous les docs de chaque collection */
+      let pageToken=null;
+      do{
+        const url=`${FS_ROOT}/spaces/${code}/${col}?pageSize=300`+(pageToken?'&pageToken='+pageToken:'');
+        const r=await fetch(url,{headers:fbH()});
+        if(!r.ok)break;
+        const d=await r.json().catch(()=>({}));
+        const docs=d.documents||[];
+        for(const doc of docs){
+          await fetch('https://firestore.googleapis.com/v1/'+doc.name.replace(/^.*\/v1\//,''),
+            {method:'DELETE',headers:fbH()}).catch(()=>{});
+        }
+        pageToken=d.nextPageToken||null;
+      }while(pageToken);
+    }
+    /* Supprimer le document parent spaces/{code} lui-même */
+    await fetch(`${FS_ROOT}/spaces/${code}`,{method:'DELETE',headers:fbH()}).catch(()=>{});
+    /* Supprimer le document _spaces/{code} */
+    const r=await fetch(`${FS_ROOT}/_spaces/${code}`,{method:'DELETE',headers:fbH()});
+    if(!r.ok&&r.status!==404){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    alert('Bibliotheque "'+name+'" supprimee avec succes.');
+    loadSpaces();
+  }catch(e){
+    alert('Erreur suppression : '+e.message);
+    console.error(e);
+  }
+}
+
+async function toggleSpace(code,cur){
+  if(!confirm(cur?`Désactiver "${code}" ?`:`Réactiver "${code}" ?`))return;
+  try{
+    const r=await fetch(`${FS_ROOT}/_spaces/${code}?updateMask.fieldPaths=active`,{
+      method:'PATCH',headers:fbH(),body:JSON.stringify({fields:{active:{booleanValue:!cur}}})
+    });
+    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    loadSpaces();
+  }catch(e){alert('Erreur : '+e.message);}
+}
+
+/* Créer un espace */
+async function createSpace(){
+  const code =document.getElementById('n-code').value.trim().toLowerCase();
+  const name =document.getElementById('n-name').value.trim();
+  const short=document.getElementById('n-short').value.trim();
+  const tag  =document.getElementById('n-tag').value.trim();
+  const color=document.getElementById('n-color').value;
+  const adm  =document.getElementById('n-adm').value.trim().toLowerCase();
+  const errEl=document.getElementById('c-err');
+  const sucEl=document.getElementById('c-suc');
+  const btn  =document.getElementById('c-btn');
+  errEl.textContent='';sucEl.style.display='none';
+  if(!code||!name||!short||!adm){errEl.textContent='Tous les champs * sont obligatoires.';return;}
+  if(!/^[a-z0-9-]+$/.test(code)){errEl.textContent='Code invalide (minuscules, chiffres, tirets).';return;}
+  if(!/^[a-z0-9]+$/.test(adm)){errEl.textContent='Code admin invalide (lettres et chiffres uniquement).';return;}
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Vérification…';
+  try{
+    const chk=await fetch(`${FS_ROOT}/_spaces/${code}`,{headers:fbH()});
+    if(chk.ok){const d=await chk.json();if(d.fields){errEl.textContent='Ce code est déjà utilisé.';return;}}
+    btn.innerHTML='<span class="spin"></span>Création…';
+    const spaceData={code,name,short,tagline:tag||name,color,active:true,createdAt:new Date().toISOString()};
+    const cfg={openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,
+      pdfFields:['num','titre','auteur','desc','demandeur'],
+      catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}};
+    const admin={id:1,abbrev:adm,prenom:'Administrateur',nom:name,role:'admin',canPropose:true,propUntil:null,disabled:false,photoB64:null,profession:'',whatsapp:'',commune:''};
+    const cnt={nxB:1,nxU:2,nxR:1,nxS:1,nxL:1};
+    /* 1. Créer le document _spaces/{code} */
+    const r1=await fetch(`${FS_ROOT}/_spaces/${code}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:tf(spaceData)})});
+    if(!r1.ok){const e=await r1.json();throw new Error(e.error?.message||'Échec écriture _spaces');}
+
+    /* 2. Écrire les sous-collections via PATCH individuels (contourne les restrictions batchWrite) */
+    const subDocs=[
+      {path:`spaces/${code}/users/1`,     data:admin},
+      {path:`spaces/${code}/config/main`, data:cfg},
+      {path:`spaces/${code}/counters/main`,data:cnt},
+    ];
+    const errors=[];
+    for(const {path,data} of subDocs){
+      const r=await fetch(`${FS_ROOT}/${path}`,{
+        method:'PATCH',headers:fbH(),
+        body:JSON.stringify({fields:tf(data)})
+      });
+      if(!r.ok){
+        const e=await r.json().catch(()=>({}));
+        const msg=e.error?.message||r.status;
+        console.warn('[SA] Échec écriture',path,':',msg);
+        errors.push(path+' → '+msg);
+      } else {
+        console.log('[SA] ✅ Écrit:',path);
+      }
+    }
+    if(errors.length>0){
+      /* Avertissement non bloquant : _spaces est créé, les sous-docs ont échoué */
+      console.warn('[SA] Certains sous-documents non écrits:',errors);
+      /* Stocker les données initiales dans _spaces/{code} comme fallback */
+      const fallbackData={...spaceData,_initAdmin:JSON.stringify(admin),_needsInit:true};
+      await fetch(`${FS_ROOT}/_spaces/${code}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:tf(fallbackData)})}).catch(()=>{});
+    }
+    const url=`${window.location.origin}/${code}`;
+    sucEl.innerHTML=`✅ <strong>Bibliothèque "${name}" créée !</strong><br>🔗 <a href="${url}" target="_blank" style="color:var(--ok);font-weight:700">${url}</a><br>👤 Code admin : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${adm}</code>`;
+    sucEl.style.display='block';
+    clearForm();loadSpaces();
+  }catch(e){errEl.textContent='Erreur : '+e.message;console.error(e);}
+  finally{btn.disabled=false;btn.textContent='🚀 Créer la bibliothèque';}
+}
+
+function clearForm(){
+  ['n-name','n-short','n-tag','n-adm'].forEach(id=>document.getElementById(id).value='');
+  /* Régénérer un nouveau code après effacement */
+  const codeEl=document.getElementById('n-code');
+  if(codeEl)codeEl.value=genCode();
+  document.getElementById('n-color').value='#22806B';
+  document.getElementById('c-err').textContent='';
+  const sucEl=document.getElementById('c-suc');
+  if(sucEl)sucEl.style.display='none';
+}
+
+/* Changer mot de passe */
+async function changePwd(){
+  const np=document.getElementById('p-new').value.trim();
+  const cp=document.getElementById('p-conf').value.trim();
+  const err=document.getElementById('p-err');
+  const btn=document.getElementById('p-btn');
+  err.textContent='';
+  if(!np||np.length<6){err.textContent='Minimum 6 caractères.';return;}
+  if(np!==cp){err.textContent='Les mots de passe ne correspondent pas.';return;}
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Enregistrement…';
+  try{
+    const h=await sha256(np);
+    const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{
+      method:'PATCH',headers:fbH(),
+      body:JSON.stringify({fields:{pwdHash:{stringValue:h},updatedAt:{stringValue:new Date().toISOString()}}})
+    });
+    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    document.getElementById('p-new').value='';
+    document.getElementById('p-conf').value='';
+    document.getElementById('warn-pwd').style.display='none';
+    cM('m-pwd');
+    alert('✅ Mot de passe mis à jour dans Firebase !\nValable sur tous les navigateurs et appareils.');
+  }catch(e){err.textContent='Erreur Firebase : '+e.message;console.error(e);}
+  finally{btn.disabled=false;btn.textContent='💾 Enregistrer';}
+}
+
+function openM(id){document.getElementById(id).classList.add('open');}
+function cM(id){document.getElementById(id).classList.remove('open');}
+
+init();
+</script>
+</body>
+</html>
