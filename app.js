@@ -680,12 +680,12 @@ async function loadAllData(){
           localStorage.removeItem('cb_session');
           hideLoading();return;
         }
-        console.log('[Session] Restauration pour id='+sessionData.id+' abbrev='+sessionData.abbrev);
+        
 
         /* Lire le document user directement depuis Firebase */
         const userUrl=`${FS_BASE}/users/${sessionData.id}`;
         const r=await fetch(userUrl,{headers:fbH()});
-        console.log('[Session] HTTP users/'+sessionData.id+' →',r.status);
+        
 
         if(r.status===404){
           /* Utilisateur supprimé → session invalide */
@@ -701,7 +701,7 @@ async function loadAllData(){
         }
 
         const userDoc=fromFsDoc(await r.json());
-        console.log('[Session] Document lu, abbrev='+userDoc.abbrev+' disabled='+userDoc.disabled);
+        
 
         /* Vérifier expiration */
         const todaySessStr=new Date().toISOString().split('T')[0];
@@ -712,7 +712,11 @@ async function loadAllData(){
           hideLoading();return;
         }
 
-        if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled){
+        /* Vérification renforcée : abbrev + token Firebase (si disponible) */
+        const tokenValid=!userDoc.lastSessionTok||
+          !sessionData.tok||
+          userDoc.lastSessionTok===sessionData.tok;
+        if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled&&tokenValid){
           /* Session valide — normaliser l'ID */
           userDoc.id=parseInt(sessionData.id)||sessionData.id;
           curUser=userDoc;
@@ -952,7 +956,20 @@ async function _initSDK(){
 
 function _spaceCol(col){return _db.collection('spaces').doc(SPACE_ID).collection(col);}
 
-/* ── Indicateur de connexion ── */
+/* ── Garde de sécurité : fonctions admin uniquement ── */
+function _requireAdmin(fn=''){
+  if(!curUser||curUser.role!=='admin'){
+    console.warn('[Sécurité] Accès refusé à '+fn+' — rôle insuffisant');
+    return false;
+  }
+  return true;
+}
+function _requirePrivileged(fn=''){
+  if(!curUser){console.warn('[Sécurité] Non connecté');return false;}
+  const ok=curUser.role==='admin'||curUser.role==='commission'||(curUser.adminTabs||[]).length>0;
+  if(!ok)console.warn('[Sécurité] Accès refusé à '+fn);
+  return ok;
+}
 let _rtDot=null;
 let _rtOnline=false; /* flag fiable pour les tests — pas de problème de format CSS */
 function _ensureRtDot(){
@@ -1089,9 +1106,16 @@ async function _fetchAndCache(col, sv){
         const idx=sessions.findIndex(x=>String(x.id)===String(changedId));
         if(idx>=0)sessions[idx]=d;else sessions.push(d);
       }else if(col==='registrations'){
-        const idx=registrations.findIndex(x=>String(x.id)===String(changedId));
-        if(idx>=0)registrations[idx]=d;else registrations.push(d);
-        /* Rafraîchir l'onglet inscriptions si ouvert */
+        /* Toujours fetch TOUTE la collection pour registrations :
+           garantit qu'aucune inscription n'est manquée même si 2 arrivent
+           simultanément (le changedId ne pointe que vers la dernière) */
+        const allRegs=await fbGetAll('registrations');
+        if(allRegs.length||registrations.length){
+          /* Fusionner : garder les locales non présentes dans Firebase (cas rare) */
+          const fbIds=new Set(allRegs.map(r=>String(r.id)));
+          const onlyLocal=registrations.filter(r=>!fbIds.has(String(r.id)));
+          registrations=[...allRegs,...onlyLocal];
+        }
         if(document.getElementById('ap-reg')?.classList.contains('active'))rAdmRegistrations();
       }else if(col==='shelfChecks'){
         const idx=shelfChecks.findIndex(x=>String(x.id)===String(changedId));
@@ -1422,7 +1446,12 @@ async function doLogin(){
     curUser=u;
     errEl.textContent='';
     document.getElementById('li').value='';
-    localStorage.setItem('cb_session',JSON.stringify({id:u.id,abbrev:u.abbrev}));
+    /* Ajouter un token de session pour durcir contre la manipulation du localStorage */
+      const sessionToken=(()=>{let t='';for(let i=0;i<16;i++)t+='0123456789abcdef'[Math.random()*16|0];return t;})();
+      const sessionPayload={id:u.id,abbrev:u.abbrev,tok:sessionToken,ts:Date.now()};
+      localStorage.setItem('cb_session',JSON.stringify(sessionPayload));
+      /* Stocker le token côté Firebase pour vérification (best-effort, pas bloquant) */
+      fbUpd('users',u.id,{lastSessionTok:sessionToken}).catch(()=>{});
     /* Charger les données puis naviguer */
     await loadRestData();
     try{
@@ -3051,7 +3080,7 @@ function shareAccess(id){
   const url=`https://wa.me/${wa}?text=${encodeURIComponent(sanitize(msg))}`;
   window.open(url,'_blank');
 }
-async function togDisable(id){
+async function togDisable(id){if(!_requireAdmin('togDisable'))return;
   const u=users.find(x=>x.id==id);if(!u)return;
   if(u.role==='admin'&&countAdmins()<=1&&!u.disabled){alert('⚠️ Seul administrateur.');return;}
   if(u.id==curUser.id&&!u.disabled){alert('⚠️ Vous ne pouvez pas désactiver votre propre compte.');return;}
@@ -3316,7 +3345,7 @@ function openUM(id=null){
   }
   if(roleEl){roleEl.onchange=_syncAdminTabs;_syncAdminTabs();}
 }
-async function savU(){
+async function savU(){if(!_requirePrivileged('savU'))return;
   const ab=document.getElementById('ufab').value.trim().toLowerCase(),
         pn=document.getElementById('ufpn').value.trim(),nm=document.getElementById('ufnm').value.trim(),
         rl=document.getElementById('ufrl').value,cp=document.getElementById('ufcp').checked,
@@ -3399,7 +3428,7 @@ async function savU(){
   cM('mus');
   /* Recharger les users depuis Firebase pour confirmer la persistance */
 }
-async function delU(id){
+async function delU(id){if(!_requireAdmin('delU'))return;
   const u=users.find(x=>x.id==id);if(!u)return;
   if(u.role==='admin'&&countAdmins()<=1){alert('⚠️ Seul administrateur — impossible de supprimer.');return;}
   if(u.id==curUser.id){alert('⚠️ Impossible de supprimer votre propre compte.');return;}
@@ -3628,7 +3657,7 @@ async function toggleCatAccess(role,type,v){
 ═══════════════════════════════════════════════════════════════ */
 let _diagFilter='all';
 
-async function runDiag(){
+async function runDiag(){if(!_requireAdmin('runDiag'))return;
   const btn=document.getElementById('diag-run-btn');
   if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
   /* Petite pause pour laisser le DOM se mettre à jour */
@@ -4056,8 +4085,15 @@ async function submitPubRegister(){
   try{
     const r=await fetch(`${FS_BASE}/registrations/${regId}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields(entry)})});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error?.message||'HTTP '+r.status);}
-    try{await fetch(`${FS_BASE}/config/sync_versions?updateMask.fieldPaths=_sv_registrations&updateMask.fieldPaths=_sv_registrations_id`,
-      {method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields({_sv_registrations:Math.floor(Date.now()/1000),_sv_registrations_id:regId})})});}catch(e){}
+    /* Notifier l'admin via sync_versions — utilise millisecondes pour éviter les collisions
+       si 2 inscriptions arrivent dans la même seconde */
+    try{
+      await fetch(`${FS_BASE}/config/sync_versions?updateMask.fieldPaths=_sv_registrations&updateMask.fieldPaths=_sv_registrations_id`,
+        {method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields({
+          _sv_registrations:Date.now(), /* millisecondes, plus précis que Math.floor(Date.now()/1000) */
+          _sv_registrations_id:regId
+        })})});
+    }catch(e){/* best-effort — ne pas bloquer la confirmation */}
     _showRegSuccess(prenom);
   }catch(e){
     if(err)err.textContent='Erreur lors de l\'envoi : '+e.message;
@@ -4523,7 +4559,7 @@ async function _testsPublic(){
 
 /* Naviguer vers l'onglet Utilisateurs et y trouver un user par ID */
 /* Recalculer et sauvegarder les compteurs depuis les données réelles */
-async function repairCounters(){
+async function repairCounters(){if(!_requireAdmin('repairCounters'))return;
   if(!confirm('Recalculer et sauvegarder les compteurs Firebase à partir des données réelles ?\n\nCela corrigera les erreurs de compteurs détectées par les tests.'))return;
 
   /* Calculer les max IDs depuis chaque collection */
@@ -4581,7 +4617,7 @@ function tpGoToUser(userId){
 }
 
 /* Vider l'historique des inscriptions (approuvées + rejetées, garder les pending) */
-async function clearRegistrations(keepPending=true){
+async function clearRegistrations(keepPending=true){if(!_requireAdmin('clearRegistrations'))return;
   const toClear=registrations.filter(r=>!keepPending||(r.status==='approved'||r.status==='rejected'));
   if(!toClear.length){alert('Aucune inscription à supprimer.');return;}
   const msg=keepPending
@@ -4795,7 +4831,7 @@ function _genAbbrev(prenom,nom){
   return code;
 }
 
-async function approveRegistration(id){
+async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))return;
   const reg=registrations.find(r=>r.id===id);if(!reg)return;
   const role=document.getElementById('reg-role-'+id)?.value||'member';
   const abbrev=_genAbbrev(reg.prenom,reg.nom);
@@ -4832,7 +4868,7 @@ async function approveRegistration(id){
   }
 }
 
-async function rejectRegistration(id){
+async function rejectRegistration(id){if(!_requireAdmin('rejectRegistration'))return;
   const reg=registrations.find(r=>r.id===id);if(!reg)return;
   if(!confirm(`Rejeter la demande de ${reg.prenom} ${reg.nom} ?\n\nAucun compte ne sera créé.`))return;
   const processedAt=new Date().toISOString();
@@ -4846,7 +4882,7 @@ async function rejectRegistration(id){
 }
 
 /* Vider tout l'historique des vérifications d'étagères */
-async function clearShelfHistory(){
+async function clearShelfHistory(){if(!_requireAdmin('clearShelfHistory'))return;
   if(!shelfChecks.length)return;
   if(!confirm(`Vider l'historique des ${shelfChecks.length} vérification(s) d'étagères ?\n\nCette action est irréversible.`))return;
   const toDelete=[...shelfChecks];
