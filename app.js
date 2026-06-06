@@ -716,10 +716,7 @@ async function loadAllData(){
         }
 
         /* Vérification renforcée : abbrev + token Firebase (si disponible) */
-        const tokenValid=!userDoc.lastSessionTok||
-          !sessionData.tok||
-          userDoc.lastSessionTok===sessionData.tok;
-        if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled&&tokenValid){
+        if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled){
           /* Session valide — normaliser l'ID */
           userDoc.id=parseInt(sessionData.id)||sessionData.id;
           curUser=userDoc;
@@ -1109,16 +1106,10 @@ async function _fetchAndCache(col, sv){
         const idx=sessions.findIndex(x=>String(x.id)===String(changedId));
         if(idx>=0)sessions[idx]=d;else sessions.push(d);
       }else if(col==='registrations'){
-        /* Toujours fetch TOUTE la collection pour registrations :
-           garantit qu'aucune inscription n'est manquée même si 2 arrivent
-           simultanément (le changedId ne pointe que vers la dernière) */
-        const allRegs=await fbGetAll('registrations');
-        if(allRegs.length||registrations.length){
-          /* Fusionner : garder les locales non présentes dans Firebase (cas rare) */
-          const fbIds=new Set(allRegs.map(r=>String(r.id)));
-          const onlyLocal=registrations.filter(r=>!fbIds.has(String(r.id)));
-          registrations=[...allRegs,...onlyLocal];
-        }
+        /* Fetch ciblé : 1 seule lecture pour la nouvelle inscription
+           (le first-fire fix gère la synchro au rechargement) */
+        const idx=registrations.findIndex(x=>String(x.id)===String(changedId));
+        if(idx>=0)registrations[idx]=d;else if(d)registrations.push(d);
         if(document.getElementById('ap-reg')?.classList.contains('active'))rAdmRegistrations();
       }else if(col==='shelfChecks'){
         const idx=shelfChecks.findIndex(x=>String(x.id)===String(changedId));
@@ -1136,15 +1127,20 @@ async function _fetchAndCache(col, sv){
   if(col==='books')books=data;
   else if(col==='loans')loans=data;
   else if(col==='users'){users=_dedupById(data.map(u=>({...u,id:parseInt(u.id)||u.id})));
-    /* Réparer les comptes permanents mal configurés (admin/resident/commission sans neverExpires) */
-    users.forEach(u=>{
-      const isPerm=['admin','resident','commission'].includes(u.role);
-      if(isPerm&&(!u.neverExpires||u.expiresAt||u.disabled)){
-        u.neverExpires=true;u.expiresAt=null;u.disabled=false;
-        fbUpd('users',u.id,{neverExpires:true,expiresAt:null,disabled:false}).catch(()=>{});
-        console.log('[Fix] Compte permanent réparé:',u.abbrev,u.role);
-      }
-    });
+    /* Réparer les comptes permanents — une seule fois par session (pas à chaque fetch) */
+    if(!sessionStorage.getItem('_cb_repaired')){
+      let repaired=0;
+      users.forEach(u=>{
+        const isPerm=['admin','resident','commission'].includes(u.role);
+        if(isPerm&&(!u.neverExpires||u.expiresAt||u.disabled)){
+          u.neverExpires=true;u.expiresAt=null;u.disabled=false;
+          fbUpd('users',u.id,{neverExpires:true,expiresAt:null,disabled:false}).catch(()=>{});
+          repaired++;
+        }
+      });
+      if(repaired>0)console.log('[Fix]',repaired,'compte(s) réparé(s)');
+      sessionStorage.setItem('_cb_repaired','1');
+    }
     if(curUser){const f=users.find(u=>u.id==curUser.id);if(f){
       if(f.disabled&&!curUser.disabled){alert('Votre compte a été désactivé.');doLogout();return;}
       curUser={...f};
@@ -1461,8 +1457,7 @@ async function doLogin(){
       const sessionToken=(()=>{let t='';for(let i=0;i<16;i++)t+='0123456789abcdef'[Math.random()*16|0];return t;})();
       const sessionPayload={id:u.id,abbrev:u.abbrev,tok:sessionToken,ts:Date.now()};
       localStorage.setItem('cb_session',JSON.stringify(sessionPayload));
-      /* Stocker le token côté Firebase pour vérification (best-effort, pas bloquant) */
-      fbUpd('users',u.id,{lastSessionTok:sessionToken}).catch(()=>{});
+      /* Token stocké uniquement en local — pas d'écriture Firebase à chaque login */
     /* Charger les données puis naviguer */
     await loadRestData();
     try{
