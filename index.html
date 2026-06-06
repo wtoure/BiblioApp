@@ -608,6 +608,16 @@
           <label class="ld">🕒 Jours et heures de disponibilité</label>
           <input type="text" class="fi fi-l" id="adm-meeting-time" placeholder="Ex : Du lundi au vendredi, 9h–17h"/>
         </div>
+        <div class="fg" style="margin-top:10px">
+          <label class="ld">🌍 Indicatif téléphonique par défaut <span style="font-size:11px;color:var(--g400)">(pré-rempli dans le formulaire d'inscription)</span></label>
+          <input type="text" class="fi fi-l" id="adm-country-code" placeholder="Ex : +225" style="max-width:160px"/>
+          <p style="font-size:11px;color:var(--g400);margin-top:4px">Sera automatiquement affiché dans le champ WhatsApp si le visiteur n'a pas encore saisi d'indicatif</p>
+        </div>
+        <div class="fg" style="margin-top:10px">
+          <label class="ld">🔗 Lien raccourci de la page de connexion <span style="font-size:11px;color:var(--g400)">(optionnel)</span></label>
+          <input type="url" class="fi fi-l" id="adm-short-link" placeholder="Ex : https://bit.ly/comoe-biblio"/>
+          <p style="font-size:11px;color:var(--g400);margin-top:4px">Si renseigné, ce lien sera utilisé dans les messages de partage des accès WhatsApp au lieu du lien complet</p>
+        </div>
         <button type="button" class="btn bn btn-sm" style="margin-top:12px" onclick="saveContact()">💾 Enregistrer</button>
         <p id="adm-contact-msg" style="font-size:12px;color:#16a34a;margin-top:8px;min-height:16px"></p>
       </div>

@@ -312,10 +312,13 @@ async function saveContact(){
   const name=document.getElementById('adm-contact-name')?.value.trim()||'';
   const place=document.getElementById('adm-meeting-place')?.value.trim()||'';
   const time=document.getElementById('adm-meeting-time')?.value.trim()||'';
+  const countryCode=document.getElementById('adm-country-code')?.value.trim()||'';
+  const shortLink=document.getElementById('adm-short-link')?.value.trim()||'';
   cfg.contactNumber=num;cfg.contactName=name;cfg.meetingPlace=place;cfg.meetingTime=time;
+  cfg.defaultCountryCode=countryCode;cfg.shortLink=shortLink;
   const msg=document.getElementById('adm-contact-msg');
   try{
-    await fbUpd('config','main',{contactNumber:num,contactName:name,meetingPlace:place,meetingTime:time});
+    await fbUpd('config','main',{contactNumber:num,contactName:name,meetingPlace:place,meetingTime:time,defaultCountryCode:countryCode,shortLink});
     if(msg){msg.style.color='#16a34a';msg.textContent='✅ Enregistré';setTimeout(()=>{if(msg)msg.textContent='';},3000);}
   }catch(e){if(msg){msg.style.color='#dc2626';msg.textContent='Erreur : '+e.message;}}
 }
@@ -532,7 +535,7 @@ async function loadAllData(){
         if(rc.ok){const cfgDoc=fromFsDoc(await rc.json());
           if(cfgDoc){
             if(cfgDoc.contactNumber)_pubContactData={number:cfgDoc.contactNumber,name:cfgDoc.contactName||''};
-            _pubMeeting={place:cfgDoc.meetingPlace||'',time:cfgDoc.meetingTime||''};
+            _pubMeeting={place:cfgDoc.meetingPlace||'',time:cfgDoc.meetingTime||'',countryCode:cfgDoc.defaultCountryCode||'',shortLink:cfgDoc.shortLink||''};
           }}
       }catch(e){/* contact optionnel */}
 
@@ -1217,16 +1220,24 @@ async function startRealtimeSync(){
     _unsubs.push(syncRef.onSnapshot({includeMetadataChanges:false},async snap=>{
       _qTrack('r',1);
       const sv=snap.exists?snap.data():{};
+      const cols=['books','loans','users','requests','sessions','config','counters','registrations','shelfChecks'];
       if(!_rtReady){
-        /* Premier fire : calibrer les versions connues sans re-fetcher */
+        /* Premier fire : comparer le cache avec Firebase et refetcher les collections périmées.
+           Corrige le bug : si admin A a validé une inscription entre deux connexions de admin B,
+           _sv_registrations dans Firebase est plus récent que dans le cache → on refetch. */
+        const stale=[];
+        for(const c of cols){const k='_sv_'+c;if((sv[k]||0)>(_knownSv[k]||0))stale.push(c);}
         _knownSv={..._knownSv,...sv};
         _rtReady=true;
         _cachePut({sv:_knownSv});
-        console.log('[RT] onSnapshot calibré — surveillance active');
+        if(stale.length){
+          console.log('[RT] Données périmées depuis la dernière connexion:',stale.join(', '));
+          await Promise.all(stale.map(c=>_fetchAndCache(c,sv).catch(e=>console.warn('[RT]',c,e.message))));
+          _refreshView(stale);
+          _showSyncToast('🔄 Synchronisé');
+        }else{console.log('[RT] onSnapshot calibré — données à jour');}
         return;
       }
-      /* Fires suivants : mises à jour ciblées */
-      const cols=['books','loans','users','requests','sessions','config','counters','registrations','shelfChecks'];
       const toFetch=[];
       for(const c of cols){const k='_sv_'+c;if((sv[k]||0)>(_knownSv[k]||0))toFetch.push(c);}
       if(!toFetch.length)return;
@@ -1517,6 +1528,8 @@ function showAdm(){
     const admContactNameEl=document.getElementById('adm-contact-name');if(admContactNameEl)admContactNameEl.value=cfg.contactName||'';
     const admMeetPlaceEl=document.getElementById('adm-meeting-place');if(admMeetPlaceEl)admMeetPlaceEl.value=cfg.meetingPlace||'';
     const admMeetTimeEl=document.getElementById('adm-meeting-time');if(admMeetTimeEl)admMeetTimeEl.value=cfg.meetingTime||'';
+    const admCountryEl=document.getElementById('adm-country-code');if(admCountryEl)admCountryEl.value=cfg.defaultCountryCode||'';
+    const admShortLinkEl=document.getElementById('adm-short-link');if(admShortLinkEl)admShortLinkEl.value=cfg.shortLink||'';
     updPDFBtn();
   }
   /* ── Réinitialiser tous les filtres du catalogue pour ce nouvel utilisateur ── */
@@ -3053,7 +3066,7 @@ function openGuide(){
 function shareAccess(id){
   const u=users.find(x=>x.id==id);if(!u){alert('Membre introuvable.');return;}
   if(!u.whatsapp){alert('Ce membre n\'a pas de numéro WhatsApp enregistré.');return;}
-  const appUrl=window.location.origin+'/'+SPACE_ID;
+  const appUrl=(cfg.shortLink&&cfg.shortLink.trim())?cfg.shortLink.trim():(window.location.origin+'/'+SPACE_ID);
   const roleLabel=ROLE_LABELS[u.role]||'Membre';
   const caps=_userCapabilities(u);
   const libName=(SPACE&&SPACE.name)||'la bibliothèque';
@@ -4049,7 +4062,13 @@ function openPubRegister(){
     <div style="padding:20px" id="_pub_reg_body">
       <div class="fg"><label class="ld">Prénom <span style="color:#dc2626">*</span></label><input class="fi" id="reg-prenom" autocomplete="given-name"/></div>
       <div class="fg"><label class="ld">Nom <span style="color:#dc2626">*</span></label><input class="fi" id="reg-nom" autocomplete="family-name"/></div>
-      <div class="fg"><label class="ld">Numéro WhatsApp <span style="color:#dc2626">*</span></label><input class="fi" id="reg-whatsapp" type="tel" placeholder="+225 07 00 00 00 00"/></div>
+      <div class="fg"><label class="ld">Numéro WhatsApp <span style="color:#dc2626">*</span></label>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${(_pubMeeting?.countryCode)?`<span style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:10px 10px;font-size:13px;font-weight:600;color:var(--g600);white-space:nowrap">${_pubMeeting.countryCode}</span>`:''}
+          <input class="fi" id="reg-whatsapp" type="tel" placeholder="${(_pubMeeting?.countryCode)?'07 00 00 00 00':'+225 07 00 00 00 00'}" style="flex:1"
+            onfocus="if(!this.value&&'${_pubMeeting?.countryCode||''}')this.value='${_pubMeeting?.countryCode||''} '" />
+        </div>
+      </div>
       <div class="fg"><label class="ld">Commune <span style="color:#dc2626">*</span></label><input class="fi" id="reg-commune" placeholder="Ex : Cocody"/></div>
       <div class="fg"><label class="ld">Profession</label><input class="fi" id="reg-profession" placeholder="Ex : Étudiant"/></div>
       <div class="fg"><label class="ld">Email <span style="font-size:11px;color:var(--g400)">(optionnel)</span></label><input class="fi" id="reg-email" type="email"/></div>
