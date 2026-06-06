@@ -7,10 +7,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-  <!-- Firebase SDK v9 compat — temps réel onSnapshot -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- Supabase JS client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/style.css"/>
 </head>
@@ -444,7 +442,6 @@
     <button type="button" class="at" onclick="swT('theme',this)">🎨 Thème</button>
     <button type="button" class="at" onclick="swT('log',this)">🔐 Connexions</button>
     <button type="button" class="at" onclick="swT('diag',this)">🩺 Diagnostic <span id="diag-badge" style="display:none;background:#dc2626;color:white;border-radius:20px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:4px">0</span></button>
-    <button type="button" class="at" onclick="swT('quota',this)">📊 Quota Firebase</button>
     <button type="button" class="at" onclick="swT('testpanel',this)">🧪 Tests</button>
   </div>
   <div class="pc">
@@ -842,19 +839,7 @@
       </table></div></div>
       <div id="log-count" style="text-align:right;font-size:12px;color:var(--g400);margin-top:6px;padding-right:4px"></div>
     </div>
-      <!-- ══ QUOTA FIREBASE ══ -->
-      <div id="ap-quota" class="ap">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
-          <div>
-            <h3 style="font-size:20px;color:var(--navy);margin-bottom:4px">📊 Quota Firebase — Plan gratuit</h3>
-            <div style="font-size:13px;color:var(--g500)">Consommation journalière — se réinitialise à <strong>00h00 UTC</strong> (08h00 Abidjan)</div>
-          </div>
-          <button type="button" class="btn bo btn-sm" onclick="rQuotaPanel()">🔄 Actualiser</button>
-        </div>
-        <div id="quota-body">
-          <div style="text-align:center;padding:40px;color:var(--g400)">Chargement…</div>
-        </div>
-      </div>
+
     <div id="ap-testpanel" class="ap">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px">
         <div>
@@ -904,7 +889,7 @@
     <div id="ap-loans_adm" class="ap">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
         <h3 style="font-size:20px;color:var(--navy)">📖 Gestion des emprunts</h3>
-        <button type="button" class="btn bd btn-sm" onclick="bulkDeleteLoanHistory()" title="Supprimer l'historique pour libérer de l'espace Firebase">🗑️ Purger l'historique</button>
+        <button type="button" class="btn bd btn-sm" onclick="bulkDeleteLoanHistory()" title="Supprimer l'historique des emprunts retournés">🗑️ Purger l'historique</button>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button type="button" class="btn bo btn-sm" id="adm-loan-f-all" onclick="rAdmLoans('all')">📋 Tous</button>
@@ -1175,18 +1160,6 @@
   <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
     <button type="button" onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:6px 16px;border-radius:7px;cursor:pointer;font-weight:600;font-family:inherit;font-size:13px">🔄 Réessayer</button>
     <button type="button" onclick="document.getElementById('fb-error').style.display='none'" style="background:rgba(255,255,255,.15);color:white;border:none;padding:6px 16px;border-radius:7px;cursor:pointer;font-family:inherit;font-size:13px">✕ Fermer</button>
-    <button type="button" onclick="document.getElementById('fb-rules-help').style.display=document.getElementById('fb-rules-help').style.display==='none'?'block':'none'" style="background:rgba(255,255,255,.1);color:white;border:none;padding:6px 16px;border-radius:7px;cursor:pointer;font-family:inherit;font-size:13px">📋 Règles Firestore</button>
-  </div>
-  <div id="fb-rules-help" style="display:none;margin-top:14px;background:rgba(0,0,0,.3);border-radius:10px;padding:14px;text-align:left;font-size:11px;line-height:1.9">
-    <strong style="font-size:12px">Firebase Console → Firestore → Règles → Publier :</strong><br>
-    <code>rules_version = '2';<br>
-service cloud.firestore {<br>
-&nbsp;&nbsp;match /databases/{database}/documents {<br>
-&nbsp;&nbsp;&nbsp;&nbsp;match /{document=**} {<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;allow read, write: if request.auth != null;<br>
-&nbsp;&nbsp;&nbsp;&nbsp;}<br>
-&nbsp;&nbsp;}<br>
-}</code>
   </div>
 </div>
 <script src="/app.js" defer></script>
@@ -1216,7 +1189,7 @@ service cloud.firestore {<br>
 <div class="mov" id="m-sa-changepwd"><div class="modal msm">
   <div class="mh"><h3>🔑 Changer le mot de passe super-admin</h3><button type="button" class="mcl" onclick="cM('m-sa-changepwd')">✕</button></div>
   <div class="mb">
-    <div class="al ai" style="margin-bottom:18px">Le nouveau mot de passe sera stocké sous forme de hash SHA-256 dans Firebase. Minimum 8 caractères.</div>
+    <div class="al ai" style="margin-bottom:18px">Le nouveau mot de passe sera stocké sous forme de hash SHA-256 dans Supabase. Minimum 8 caractères.</div>
     <div class="fg"><label class="ld">Nouveau mot de passe</label><input type="password" id="sa-new-pwd" class="fi fi-l" placeholder="Min. 8 caractères…"/></div>
     <div class="fg"><label class="ld">Confirmer</label><input type="password" id="sa-confirm-pwd" class="fi fi-l" placeholder="Répéter…"/></div>
     <p id="sa-changepwd-err" style="color:var(--danger);font-size:13px;min-height:16px"></p>

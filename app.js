@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════
-   FIREBASE REST API — Pas de SDK (100% fetch natif)
+   SUPABASE — Backend PostgreSQL
    Fonctionne sur Netlify, GitHub Pages, partout.
 ═══════════════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════════
-   MULTI-ESPACES — Les centres sont gérés dans Firebase.
-   Collection racine : _spaces/{code}
+   MULTI-ESPACES — Les centres sont gérés dans Supabase.
+   Table racine : spaces (colonne code)
    Accès super-admin : /{code}  où code = '~admin'
 ═══════════════════════════════════════════════════════════════ */
 
@@ -39,257 +39,160 @@ const SPACE_ID = (function(){
 })();
 
 /* Super-admin : le mot de passe N'EST PAS stocké ici.
-   Il est stocké sous forme de hash SHA-256 dans Firebase :
-   Collection racine : _superadmin / document : config / champ : pwdHash
-   → Utilisez le fichier set-admin-password.html fourni pour l'initialiser. */
+   Il est stocké sous forme de hash SHA-256 dans Supabase :
+   Table : super_admin_config / champ : pwdHash */
 const SUPER_ADMIN_CODE = '~admin';
 
-/* Espace courant (chargé depuis Firebase) */
+/* Espace courant (chargé depuis Supabase) */
 let SPACE = null;
 
-/* URL de base Firestore — sans préfixe d'espace (pour _spaces) */
-const FB_API_KEY  = "AIzaSyBIqsfTSS3ypsHc_dQrKhYpB8pIbF9adBY";
-const FB_PROJECT  = "comoe-biblio-f28d7";
-const FS_ROOT     = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
-const AUTH_URL    = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`;
-const BATCH_URL   = `${FS_ROOT}:batchWrite`;
+/* ── Supabase credentials ── */
+const SB_URL = 'https://ktknaajjtmhevsafrpjv.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0a25hYWpqdG1oZXZzYWZycGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjQzMTMsImV4cCI6MjA5NjM0MDMxM30.-g5AA1lnvMYEOp9HrHayTant_FXKhJRoW65oX9JOwJ4';
+let sb = null;
 
-/* FS_BASE est défini après chargement de SPACE */
-let FS_BASE = null;
-function fbBatchPath(col,id){return `projects/${FB_PROJECT}/databases/(default)/documents/spaces/${SPACE_ID}/${col}/${id}`;}
-
-
-let fbToken = null;
-
-/* — Sérialisation JS → Firestore — */
-function toFsVal(v){
-  if(v===null||v===undefined)return{nullValue:null};
-  if(typeof v==='boolean')return{booleanValue:v};
-  if(typeof v==='number'){return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};}
-  if(typeof v==='string')return{stringValue:v};
-  if(Array.isArray(v))return{arrayValue:{values:v.map(toFsVal)}};
-  if(typeof v==='object')return{mapValue:{fields:toFsFields(v)}};
-  return{stringValue:String(v)};
-}
-function toFsFields(obj){const f={};for(const[k,v]of Object.entries(obj))f[k]=toFsVal(v);return f;}
-
-/* — Désérialisation Firestore → JS — */
-function fromFsVal(val){
-  if('nullValue'in val)return null;
-  if('booleanValue'in val)return val.booleanValue;
-  if('integerValue'in val)return parseInt(val.integerValue);
-  if('doubleValue'in val)return val.doubleValue;
-  if('stringValue'in val)return val.stringValue;
-  if('arrayValue'in val)return(val.arrayValue.values||[]).map(fromFsVal);
-  if('mapValue'in val)return fromFsDoc({fields:val.mapValue.fields||{}});
-  return null;
-}
-function fromFsDoc(doc){
-  if(!doc||!doc.fields)return{};
-  const obj={};for(const[k,v]of Object.entries(doc.fields))obj[k]=fromFsVal(v);return obj;
+function _initSb(){
+  if(sb)return;
+  sb = supabase.createClient(SB_URL, SB_KEY);
 }
 
-/* — Auth anonyme — retry 3× — lève une erreur si échec final — */
-async function fbAuthAnon(){
-  const MAX_RETRY=3;
-  let lastErr='';
-  for(let attempt=1;attempt<=MAX_RETRY;attempt++){
-    try{
-      if(attempt>1){
-        showLoading('Reconnexion… ('+attempt+'/'+MAX_RETRY+')');
-        await new Promise(r=>setTimeout(r,1500*(attempt-1)));
-      }
-      const r=await fetch(AUTH_URL,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({returnSecureToken:true})
-      });
-      const d=await r.json();
-      console.log('[Auth] HTTP',r.status,'→', JSON.stringify(d).substring(0,200));
-      if(d.idToken){
-        fbToken=d.idToken;
-        console.log('[Auth] Token obtenu ✅');
-        return true;
-      }
-      /* Réponse reçue mais pas de token → problème de config Firebase */
-      const reason=d.error?.message||d.error?.status||JSON.stringify(d);
-      lastErr=reason;
-      console.warn('[Auth] Pas de token :', d);
-      /* Ne pas retenter les erreurs de configuration */
-      if(d.error?.status==='INVALID_ARGUMENT'||d.error?.message?.includes('OPERATION_NOT_ALLOWED')){break;}
-      break;
-    }catch(e){
-      lastErr=e.message;
-      console.warn('Auth anonyme tentative '+attempt+' :',e.message);
-    }
+/* ── Mapping noms Firestore → tables Supabase ── */
+function _colToTable(col){
+  const m={
+    loginLog:'login_logs', deletedUsers:'deleted_users',
+    shelfChecks:'shelf_checks', requests:'book_requests',
+    sessions:'request_sessions', config:'space_config',
+    counters:'space_counters'
+  };
+  return m[col]||col;
+}
+
+/* ── Lecture de toutes les lignes d'une collection (espace courant) ── */
+async function sbGetAll(col){
+  _initSb();
+  const tbl=_colToTable(col);
+  const {data,error}=await sb.from(tbl).select('*').eq('space_code',SPACE_ID);
+  if(error)throw new Error(error.message);
+  return data||[];
+}
+
+/* ── Lecture d'un document unique ── */
+async function sbGetDoc(col,id){
+  _initSb();
+  const tbl=_colToTable(col);
+  /* space_config et space_counters n'ont pas de colonne id — leur PK est space_code */
+  if(col==='config'||col==='counters'){
+    const {data,error}=await sb.from(tbl).select('*').eq('space_code',SPACE_ID).maybeSingle();
+    if(error)throw new Error(error.message);
+    return data;
   }
-  /* Lever une vraie erreur pour que loadAllData l'affiche */
-  throw new Error('AUTH_FAILED: '+( lastErr||'Authentification Firebase échouée'));
-}
-function fbH(){const h={'Content-Type':'application/json'};if(fbToken)h['Authorization']='Bearer '+fbToken;return h;}
-
-/* — Lire tous les documents d'une collection — */
-async function fbGetAll(col){
-  let docs=[],pageToken=null;
-  do{
-    const url=`${FS_BASE}/${col}?pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
-    const r=await fetch(url,{headers:fbH()});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.error?.message||`Firestore GET ${col} : ${r.status}`);
-    if(d.documents){const chunk=d.documents.map(fromFsDoc);docs.push(...chunk);_qTrack('r',chunk.length);}
-    pageToken=d.nextPageToken||null;
-  }while(pageToken);
-  return docs;
+  const {data,error}=await sb.from(tbl).select('*').eq('id',id).eq('space_code',SPACE_ID).maybeSingle();
+  if(error)throw new Error(error.message);
+  return data;
 }
 
-/* — Lire un document unique (dans l'espace courant) — */
-async function fbGetDoc(col,id){
-  const r=await fetch(`${FS_BASE}/${col}/${id}`,{headers:fbH()});
-  if(r.status===404)return null;
-  const d=await r.json();
-  if(!r.ok)throw new Error(d.error?.message||`Firestore GET doc : ${r.status}`);
-  _qTrack('r',1);
-  return fromFsDoc(d);
-}
-/* — Lire un document depuis la racine (hors espace, ex: _spaces) — */
-async function fbGetDocRoot(col,id){
-  let lastStatus=0;
-  for(let attempt=1;attempt<=3;attempt++){
-    try{
-      const r=await fetch(`${FS_ROOT}/${col}/${id}`,{headers:fbH()});
-      lastStatus=r.status;
-      if(r.status===404)return null; /* Vraiment introuvable */
-      const d=await r.json();
-      if(r.status===401||r.status===403){
-        /* Token expiré → renouveler et réessayer */
-        if(attempt<3){await fbAuthAnon();continue;}
-        throw new Error('PERMISSION_DENIED: Accès refusé à '+col+'/'+id+' (HTTP '+r.status+')');
-      }
-      if(!r.ok)throw new Error('FB_HTTP_'+r.status+': '+JSON.stringify(d).substring(0,120));
-      return fromFsDoc(d);
-    }catch(e){
-      if(e.message.startsWith('PERMISSION_DENIED')||e.message.startsWith('FB_HTTP')||attempt===3)throw e;
-      await new Promise(r=>setTimeout(r,800*attempt));
-    }
+/* ── Lecture racine (_spaces → table spaces, __superadmin__ → super_admin_config) ── */
+async function sbGetDocRoot(col,id){
+  _initSb();
+  if(col==='_spaces'){
+    const {data,error}=await sb.from('spaces').select('*').eq('code',id).maybeSingle();
+    if(error)throw new Error(error.message);
+    return data;
   }
-  throw new Error('FB_GETDOC_FAILED: Impossible de lire '+col+'/'+id+' après 3 tentatives');
-}
-/* — Lire tous les docs d'une collection racine (_spaces, etc.) — */
-async function fbGetAllRoot(col){
-  let docs=[],pageToken=null;
-  do{
-    const url=`${FS_ROOT}/${col}?pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
-    const r=await fetch(url,{headers:fbH()});
-    const d=await r.json();
-    if(!r.ok)return [];
-    if(d.documents)docs.push(...d.documents.map(fromFsDoc));
-    pageToken=d.nextPageToken||null;
-  }while(pageToken);
-  return docs;
-}
-/* — Lire une collection depuis l'ANCIEN chemin racine (migration) — */
-async function fbGetAllLegacy(col){
-  /* Ancien chemin : /documents/{col} (avant multi-espaces) */
-  let docs=[],pageToken=null;
-  do{
-    const url=`${FS_ROOT}/${col}?pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
-    const r=await fetch(url,{headers:fbH()});
-    const d=await r.json();
-    if(!r.ok||!d.documents)return [];
-    docs.push(...d.documents.map(fromFsDoc));
-    pageToken=d.nextPageToken||null;
-  }while(pageToken);
-  return docs;
-}
-/* — Écrire dans la racine — */
-async function fbSetRoot(col,id,data){
-  const r=await fetch(`${FS_ROOT}/${col}/${id}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields(data)})});
-  if(!r.ok){const d=await r.json();throw new Error(d.error?.message||`Firestore SET root : ${r.status}`);}
+  /* __superadmin__ */
+  const {data}=await sb.from('super_admin_config').select('*').eq('id',1).maybeSingle();
+  return data;
 }
 
-/* — Écrire / remplacer un document — */
-async function fbSet(col,id,data){
-  const r=await fetch(`${FS_BASE}/${col}/${id}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields(data)})});
-  if(!r.ok){const d=await r.json();throw new Error(d.error?.message||`Firestore SET : ${r.status}`);}
-  _qTrack('w',1);
-  _bumpSync(col,id,false).catch(()=>{});
+/* ── Lecture de toutes les bibliothèques (super-admin) ── */
+async function sbGetAllRoot(col){
+  _initSb();
+  const {data}=await sb.from('spaces').select('*');
+  return data||[];
 }
 
-/* — Mettre à jour des champs spécifiques — */
-async function fbUpd(col,id,data){
-  const keys=Object.keys(data);
-  if(!keys.length)return;
-  const mask=keys.map(k=>`updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-  const r=await fetch(`${FS_BASE}/${col}/${id}?${mask}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields(data)})});
-  if(!r.ok){const d=await r.json().catch(()=>({}));const msg=d.error?.message||`HTTP ${r.status}`;console.warn('fbUpd error:',msg);throw new Error(msg);}
-  _qTrack('w',1);
-  if(col!=='config'||String(id)!=='sync_versions') _bumpSync(col,id,false).catch(()=>{});
+/* ── Écriture racine (spaces ou super_admin_config) ── */
+async function sbSetRoot(col,id,data){
+  _initSb();
+  if(col==='_spaces'){
+    const {error}=await sb.from('spaces').upsert({...data,code:id},{onConflict:'code'});
+    if(error)throw new Error(error.message);
+  } else {
+    const {error}=await sb.from('super_admin_config').upsert({id:1,...data});
+    if(error)throw new Error(error.message);
+  }
 }
 
-/* — Supprimer un document — */
-async function fbDel(col,id){
-  const r=await fetch(`${FS_BASE}/${col}/${id}`,{method:'DELETE',headers:fbH()});
-  if(!r.ok)console.warn('fbDel error:',r.status);
-  _qTrack('d',1);
-  _bumpSync(col,id,true).catch(()=>{});
+/* ── Écriture / remplacement d'un document ── */
+async function sbSet(col,id,data){
+  _initSb();
+  const tbl=_colToTable(col);
+  /* space_config et space_counters n'ont pas de colonne id */
+  if(col==='config'||col==='counters'){
+    const {error}=await sb.from(tbl).upsert({...data,space_code:SPACE_ID});
+    if(error)throw new Error(error.message);
+    return;
+  }
+  const {error}=await sb.from(tbl).upsert({...data,id,space_code:SPACE_ID});
+  if(error)throw new Error(error.message);
 }
 
-/* — Écriture en lot (batch set) avec fallback individuel — */
-async function fbBatchSet(col,docs){
+/* ── Mise à jour partielle ── */
+async function sbUpd(col,id,data){
+  _initSb();
+  if(!Object.keys(data).length)return;
+  const tbl=_colToTable(col);
+  /* space_config et space_counters n'ont pas de colonne id */
+  if(col==='config'||col==='counters'){
+    const {error}=await sb.from(tbl).update(data).eq('space_code',SPACE_ID);
+    if(error){console.warn('sbUpd error:',error.message);throw new Error(error.message);}
+    return;
+  }
+  const {error}=await sb.from(tbl).update(data).eq('id',id).eq('space_code',SPACE_ID);
+  if(error){console.warn('sbUpd error:',error.message);throw new Error(error.message);}
+}
+
+/* ── Suppression ── */
+async function sbDel(col,id){
+  _initSb();
+  const tbl=_colToTable(col);
+  const {error}=await sb.from(tbl).delete().eq('id',id).eq('space_code',SPACE_ID);
+  if(error)console.warn('sbDel error:',error.message);
+}
+
+/* ── Écriture en lot ── */
+async function sbBatchSet(col,docs){
   if(!docs||!docs.length)return;
-  /* Tenter batchWrite d'abord (rapide) */
-  try{
-    for(let i=0;i<docs.length;i+=400){
-      const chunk=docs.slice(i,i+400);
-      const writes=chunk.map(d=>({update:{name:fbBatchPath(col,d.id),fields:toFsFields(d)}}));
-      const r=await fetch(BATCH_URL,{method:'POST',headers:fbH(),body:JSON.stringify({writes})});
-      if(!r.ok){
-        const e=await r.json();
-        const errMsg=e.error?.message||'';
-        /* Si 403 → fallback sur fbSet individuels */
-        if(r.status===403||errMsg.includes('permission')){
-          console.warn('[CB] batchWrite 403 → fallback fbSet individuel pour',col);
-          throw new Error('FALLBACK_TO_INDIVIDUAL');
-        }
-        throw new Error(errMsg||'Batch set error '+r.status);
-      }
-    }
-  }catch(err){
-    if(err.message==='FALLBACK_TO_INDIVIDUAL'){
-      /* Fallback : écriture doc par doc via PATCH normal */
-      console.log('[CB] Écriture individuelle de',docs.length,'docs dans',col);
-      for(const doc of docs){
-        await fbSet(col,doc.id,doc);
-      }
-    } else {
-      throw err;
-    }
+  _initSb();
+  const tbl=_colToTable(col);
+  const enriched=docs.map(d=>({...d,space_code:SPACE_ID}));
+  for(let i=0;i<enriched.length;i+=500){
+    const {error}=await sb.from(tbl).upsert(enriched.slice(i,i+500));
+    if(error)throw new Error(error.message);
   }
 }
 
-/* — Suppression en lot (batch delete) — */
-async function fbBatchDel(col,ids){
-  const allIds=ids.map(String);
-  for(let i=0;i<allIds.length;i+=400){
-    const chunk=allIds.slice(i,i+400);
-    const writes=chunk.map(id=>({delete:fbBatchPath(col,id)}));
-    const r=await fetch(BATCH_URL,{method:'POST',headers:fbH(),body:JSON.stringify({writes})});
-    if(!r.ok)console.warn('Batch delete error:',r.status);
-  }
+/* ── Suppression en lot ── */
+async function sbBatchDel(col,ids){
+  if(!ids||!ids.length)return;
+  _initSb();
+  const tbl=_colToTable(col);
+  const {error}=await sb.from(tbl).delete().in('id',ids.map(String)).eq('space_code',SPACE_ID);
+  if(error)console.warn('sbBatchDel error:',error.message);
 }
 
-/* fbSaveCounters : n'écrit dans Firebase que si les compteurs ont réellement changé.
-   Évite les écritures inutiles (et les bumps associés) lors d'appels redondants. */
+/* sbSaveCounters : n'écrit que si les compteurs ont réellement changé. */
 let _lastSavedCounters='';
-async function fbSaveCounters(){
+async function sbSaveCounters(){
   const current=JSON.stringify({nxB,nxU,nxR,nxS,nxL,nxSC,nxReg});
-  if(current===_lastSavedCounters)return; /* aucun changement → 0 écriture */
-  await fbSet('counters','main',{nxB,nxU,nxR,nxS,nxL,nxSC,nxReg});
-  _lastSavedCounters=current;
+  if(current===_lastSavedCounters)return;
+  _initSb();
+  const {error}=await sb.from('space_counters')
+    .upsert({space_code:SPACE_ID,nxB,nxU,nxR,nxS,nxL,nxSC,nxReg});
+  if(!error)_lastSavedCounters=current;
 }
 
-/* ID utilisateur anti-collision : max(ids existants, nxU) + 1.
-   Empêche d'écraser un compte même si le compteur est obsolète (multi-onglets/appareils). */
+/* ID utilisateur anti-collision : max(ids existants, nxU) + 1. */
 function _nextUserId(){
   let maxId=nxU-1;
   users.forEach(u=>{const n=parseInt(u.id);if(!isNaN(n)&&n>maxId)maxId=n;});
@@ -304,7 +207,11 @@ function _dedupById(arr){
   arr.forEach(x=>map.set(String(x.id),x));
   return [...map.values()];
 }
-async function fbSaveCfg(){await fbSet('config','main',cfg);}
+async function sbSaveCfg(){
+  _initSb();
+  const {error}=await sb.from('space_config').upsert({space_code:SPACE_ID,...cfg});
+  if(error)throw new Error(error.message);
+}
 
 /* Enregistrer le contact du chargé de bibliothèque (affiché sur la page publique) */
 async function saveContact(){
@@ -318,13 +225,13 @@ async function saveContact(){
   cfg.defaultCountryCode=countryCode;cfg.shortLink=shortLink;
   const msg=document.getElementById('adm-contact-msg');
   try{
-    await fbUpd('config','main',{contactNumber:num,contactName:name,meetingPlace:place,meetingTime:time,defaultCountryCode:countryCode,shortLink});
+    await sbUpd('config','main',{contactNumber:num,contactName:name,meetingPlace:place,meetingTime:time,defaultCountryCode:countryCode,shortLink});
     if(msg){msg.style.color='#16a34a';msg.textContent='✅ Enregistré';setTimeout(()=>{if(msg)msg.textContent='';},3000);}
   }catch(e){if(msg){msg.style.color='#dc2626';msg.textContent='Erreur : '+e.message;}}
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   IN-MEMORY DATA (chargé depuis Firebase au démarrage)
+   IN-MEMORY DATA (chargé depuis Supabase au démarrage)
 ═══════════════════════════════════════════════════════════════ */
 let books=[], users=[], requests=[], sessions=[], loginLog=[],deletedUsers=[],loans=[],shelfChecks=[],registrations=[];
 let cfg={openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}};
@@ -495,80 +402,41 @@ async function loadAllData(){
 
     /* Tout le flux dans une fonction async auto-appelée avec gestion d'erreur totale */
     (async()=>{
-      /* Étape 1 : Auth anonyme */
-      if(!fbToken){
-        _status('🔐','Connexion…');
-        try{
-          await fbAuthAnon();
-        }catch(authErr){
-          _status('❌','Échec de connexion',
-            'Impossible d\'obtenir un token Firebase.<br>'+
-            'Vérifiez que l\'<strong>Authentification anonyme</strong> est bien activée dans Firebase Console → Authentication → Sign-in method.<br><br>'+
-            '<code style="font-size:11px;background:#f1f5f9;padding:2px 6px;border-radius:4px">Erreur : '+authErr.message+'</code>');
-          return;
-        }
-      }
+      _initSb();
 
-      /* Étape 2 : Construire l'URL Firestore directement */
-      /* Étape 3 : Lire l'espace pour le nom de la bibliothèque (optionnel) */
+      /* Étape 1 : Lire l'espace pour le nom de la bibliothèque (optionnel) */
       try{
         const ck='cb_space_'+SPACE_ID;
         let sp=null;
         try{const c=JSON.parse(localStorage.getItem(ck)||'null');
           if(c&&c._ts&&Date.now()-c._ts<3600000)sp=c;}catch(e){}
         if(!sp){
-          const r=await fetch(`${FS_ROOT}/_spaces/${SPACE_ID}`,{headers:fbH()});
-          if(r.ok){sp=fromFsDoc(await r.json());
-            try{localStorage.setItem(ck,JSON.stringify({...sp,_ts:Date.now()}));}catch(e){}}
+          sp=await sbGetDocRoot('_spaces',SPACE_ID);
+          if(sp){try{localStorage.setItem(ck,JSON.stringify({...sp,_ts:Date.now()}));}catch(e){}}
         }
         if(sp&&sp.active!==false){
-          SPACE=sp;FS_BASE=`${FS_ROOT}/spaces/${SPACE_ID}`;applySpaceTheme();
+          SPACE=sp;applySpaceTheme();
           const t=document.getElementById('pub-hero-title');
           if(t)t.textContent='Catalogue — '+(sp.name||'Bibliothèque');
         }
       }catch(e){/* L'espace n'est pas critique pour afficher les livres */}
-      if(!FS_BASE)FS_BASE=`${FS_ROOT}/spaces/${SPACE_ID}`;
 
       /* Lire la config pour récupérer le contact du chargé de bibliothèque */
       try{
-        const rc=await fetch(`${FS_BASE}/config/main`,{headers:fbH()});
-        if(rc.ok){const cfgDoc=fromFsDoc(await rc.json());
-          if(cfgDoc){
-            if(cfgDoc.contactNumber)_pubContactData={number:cfgDoc.contactNumber,name:cfgDoc.contactName||''};
-            _pubMeeting={place:cfgDoc.meetingPlace||'',time:cfgDoc.meetingTime||'',countryCode:cfgDoc.defaultCountryCode||'',shortLink:cfgDoc.shortLink||''};
-          }}
+        const cfgDoc=await sbGetDoc('config',SPACE_ID);
+        if(cfgDoc){
+          if(cfgDoc.contactNumber)_pubContactData={number:cfgDoc.contactNumber,name:cfgDoc.contactName||''};
+          _pubMeeting={place:cfgDoc.meetingPlace||'',time:cfgDoc.meetingTime||'',countryCode:cfgDoc.defaultCountryCode||'',shortLink:cfgDoc.shortLink||''};
+        }
       }catch(e){/* contact optionnel */}
 
-      /* Étape 4 : Lire TOUS les livres avec pagination Firestore */
+      /* Étape 2 : Lire TOUS les livres depuis Supabase */
       _status('📖','Récupération des livres…');
       let docs=[];
       try{
-        let pageToken=null;
-        let pageNum=0;
-        do{
-          pageNum++;
-          const url=`${FS_ROOT}/spaces/${SPACE_ID}/books?pageSize=300`+(pageToken?`&pageToken=${pageToken}`:'');
-          const r=await fetch(url,{headers:fbH()});
-          if(!r.ok){
-            const err=await r.json().catch(()=>({}));
-            const code=err?.error?.status||r.status;
-            const msg=err?.error?.message||'HTTP '+r.status;
-            if(r.status===401||code==='UNAUTHENTICATED'){
-              _status('🔐','Accès refusé (401)',
-                'Firebase exige une connexion. Assurez-vous que l\'<strong>Authentification anonyme</strong> est activée dans Firebase Console.<br><br>'+
-                '<code style="font-size:10px">fbToken='+(fbToken?fbToken.substring(0,20)+'…':'null')+'</code>');
-            }else if(r.status===403||code==='PERMISSION_DENIED'){
-              _status('🚫','Permission refusée (403)','Les règles Firestore bloquent la lecture.');
-            }else{_status('⚠️','Erreur Firebase',msg);}
-            return;
-          }
-          const d=await r.json();
-          if(d.documents)docs.push(...d.documents.map(fromFsDoc));
-          pageToken=d.nextPageToken||null;
-          if(pageToken)_status('📖',`Récupération des livres… (page ${pageNum})`);
-        }while(pageToken);
+        docs=await sbGetAll('books');
       }catch(netErr){
-        _status('📡','Erreur réseau','Impossible de joindre Firebase.<br><code style="font-size:10px">'+netErr.message+'</code>');
+        _status('📡','Erreur réseau','Impossible de joindre Supabase.<br><code style="font-size:10px">'+netErr.message+'</code>');
         return;
       }
 
@@ -593,17 +461,12 @@ async function loadAllData(){
   }
 
   try{
-    /* ── 0. Auth Firebase ── */
-    dbg.push('0. Auth...');
+    /* ── 0. Init Supabase ── */
+    dbg.push('0. Init Supabase…');
     showLoading('Connexion…');
-    await fbAuthAnon();
-    dbg.push('0. Auth OK — token: '+(fbToken?'OUI ('+fbToken.substring(0,12)+'...)':'NON ❌'));
+    _initSb();
+    dbg.push('0. Supabase OK');
     console.log('[CB]',dbg[dbg.length-1]);
-
-    /* Vérification explicite : si pas de token → erreur claire */
-    if(!fbToken){
-      throw new Error('AUTH_FAILED: fbToken est null après fbAuthAnon()');
-    }
 
     /* ── 1. Panneau super-admin ── */
     if(SPACE_ID===SUPER_ADMIN_CODE){
@@ -630,29 +493,28 @@ async function loadAllData(){
       if(cached&&cached._ts&&Date.now()-cached._ts<3600000){spaceDoc=cached;dbg.push('3. _spaces depuis cache localStorage (0 lecture)');}
     }catch(e){}
     if(!spaceDoc){
-      spaceDoc=await fbGetDocRoot('_spaces',SPACE_ID);
+      spaceDoc=await sbGetDocRoot('_spaces',SPACE_ID);
       if(spaceDoc){try{localStorage.setItem(_spacesCacheKey,JSON.stringify({...spaceDoc,_ts:Date.now()}));}catch(e){}}
     }
     dbg.push('3. _spaces OK — doc: '+(spaceDoc?JSON.stringify(spaceDoc).substring(0,60):'null'));
     console.log('[CB]',dbg[dbg.length-1]);
-    /* Auto-migration : si c'est le code par défaut et qu'il n'existe pas encore dans _spaces → le créer */
+    /* Auto-migration : si c'est le code par défaut et qu'il n'existe pas encore dans spaces → le créer */
     if(!spaceDoc && SPACE_ID===DEFAULT_SPACE){
       const defaultSpaceData={code:DEFAULT_SPACE,name:'Bibliothèque Centre Culturel Comoé',
         short:'ComoéBiblio',tagline:'Bibliothèque · Centre Culturel Comoé',
         color:'#22806B',active:true,createdAt:new Date().toISOString()};
-      try{await fbSetRoot('_spaces',DEFAULT_SPACE,defaultSpaceData);}catch(e){console.warn('Migration _spaces/'+DEFAULT_SPACE+':',e);}
+      try{await sbSetRoot('_spaces',DEFAULT_SPACE,defaultSpaceData);}catch(e){console.warn('Migration spaces/'+DEFAULT_SPACE+':',e);}
       spaceDoc=defaultSpaceData;
     }
     /* Espace trouvé mais désactivé */
     if(spaceDoc&&spaceDoc.active===false){
       hideLoading();showNotFound();return;
     }
-    /* Espace introuvable (vrai 404 Firebase) */
+    /* Espace introuvable */
     if(!spaceDoc||!spaceDoc.code){
       hideLoading();showNotFound();return;
     }
     SPACE=spaceDoc;
-    FS_BASE=`${FS_ROOT}/spaces/${SPACE_ID}`;
     applySpaceTheme();
     /* ── Phase 1 : NE PAS charger users[] au démarrage (sécurité) ── */
     hideLoading();
@@ -685,31 +547,14 @@ async function loadAllData(){
         }
         
 
-        /* Lire le document user directement depuis Firebase */
-        const userUrl=`${FS_BASE}/users/${sessionData.id}`;
-        const r=await fetch(userUrl,{headers:fbH()});
-        
-
-        if(r.status===404){
-          /* Utilisateur supprimé → session invalide */
-          console.warn('[Session] Utilisateur introuvable (404), suppression session');
-          localStorage.removeItem('cb_session');
-          hideLoading();return;
-        }
-
-        if(!r.ok){
-          /* Erreur réseau ou permissions → NE PAS supprimer la session, réessayer au prochain load */
-          console.warn('[Session] Erreur Firebase',r.status,'— session conservée pour retry');
-          hideLoading();return;
-        }
-
-        const userDoc=fromFsDoc(await r.json());
+        /* Lire le document user directement depuis Supabase */
+        const userDoc=await sbGetDoc('users',sessionData.id);
         
 
         /* Vérifier expiration */
         const todaySessStr=new Date().toISOString().split('T')[0];
         if(!userDoc.neverExpires&&userDoc&&userDoc.expiresAt&&userDoc.expiresAt<todaySessStr&&!userDoc.disabled&&userDoc.role!=='admin'&&userDoc.role!=='resident'&&userDoc.role!=='commission'){
-          fbUpd('users',userDoc.id||sessionData.id,{disabled:true}).catch(()=>{});
+          sbUpd('users',userDoc.id||sessionData.id,{disabled:true}).catch(()=>{});
           console.warn('[Session] Compte expiré le',userDoc.expiresAt,'— désactivation auto, suppression session');
           localStorage.removeItem('cb_session');
           hideLoading();return;
@@ -764,43 +609,15 @@ async function loadAllData(){
   }catch(e){
     hideLoading();
     const raw=e.message||String(e);
-    console.error('[ComoéBiblio] Erreur Firebase brute :', raw);
-    console.error('[ComoéBiblio] Stack :', e.stack||'(pas de stack)');
-    /* Bibliothèque vraiment introuvable (retourné null→404) → pas une erreur réseau */
+    console.error('[ComoéBiblio] Erreur Supabase :', raw);
     if(raw.includes('SPACE_NOT_FOUND')){showNotFound();return;}
-    let msg='', detail='Erreur technique : <code>'+raw+'</code>';
-    if(raw.includes('AUTH_FAILED')){
-      msg="Echec authentification Firebase.";
-      const inner=raw.replace('AUTH_FAILED:','').trim();
-      if(inner.includes('OPERATION_NOT_ALLOWED')||inner.includes('ANONYMOUS_PROVIDER_DISABLED')){
-        detail='Auth anonyme désactivée. Firebase Console → Authentication → Sign-in method → <strong>Anonyme → Activer</strong>';
-      } else if(inner.includes('INVALID_API_KEY')||inner.includes('API_KEY')){
-        detail='Clé API invalide dans le fichier HTML.';
-      } else {
-        detail='Détail : <code>'+inner+'</code>';
-      }
-    } else if(raw.includes('CONFIGURATION_NOT_FOUND')||raw.includes('API_KEY')||raw.includes('INVALID_API_KEY')){
-      msg='⚙️ Clé API Firebase invalide.';
-      detail='Firebase Console → Authentication → Sign-in method → Anonyme → Activer';
-    } else if(raw.includes('ADMIN_ONLY_OPERATION')||raw.includes('ANONYMOUS_PROVIDER_DISABLED')||raw.includes('OPERATION_NOT_ALLOWED')){
-      msg='⚙️ Auth anonyme non activée dans Firebase.';
-      detail='Firebase Console → Authentication → Sign-in method → <strong>Anonyme → Activer</strong> → Enregistrer';
-    } else if(raw.includes('permission-denied')||raw.includes('PERMISSION_DENIED')){
-      msg='🔒 Règles Firestore : accès refusé.';
-      detail="Les regles sont publiees mais le token est absent. Activez Auth Anonyme dans Firebase Console.";
-    } else if(raw.includes('Missing or insufficient permissions')){
-      msg='🔒 Permissions Firestore insuffisantes.';
-      detail="Verifiez regles Firestore ET auth anonyme activee.<br>"+raw;
-    } else if(raw.includes('Failed to fetch')||raw.includes('NetworkError')||raw.includes('net::ERR')){
+    let msg='⚠️ Erreur de connexion';
+    let detail='Erreur : <code>'+raw+'</code>';
+    if(raw.includes('Failed to fetch')||raw.includes('NetworkError')||raw.includes('net::ERR')){
       msg='📡 Connexion impossible.';
-      detail='Vérifiez votre connexion internet. La page va se recharger automatiquement dans 8 secondes…';
-      /* Retry automatique après 8s pour les erreurs réseau */
+      detail='Vérifiez votre connexion internet. La page va se recharger dans 8 secondes…';
       setTimeout(()=>{if(document.getElementById('fb-error')?.style.display!=='none')location.reload();},8000);
-    } else {
-      msg='⚠️ Erreur Firebase';
-      detail='Erreur brute : <code style="font-size:11px;word-break:break-all">'+raw+'</code>';
     }
-    /* Ajouter le journal de démarrage au message d'erreur */
     const journal=dbg.length?'<br><br><small style="opacity:.6;font-size:11px">Journal : '+dbg.join(' → ')+'</small>':'';
     showFbError(msg, detail+journal);
   }
@@ -808,17 +625,7 @@ async function loadAllData(){
 let dataReady = false;
 
 /* ═══════════════════════════════════════════════════════════════
-   FIREBASE SDK — Temps réel via onSnapshot (WebSocket permanent)
-   Lectures : SDK onSnapshot (push, < 300ms)
-   Écritures : REST natif (fbUpd/fbSet/fbDel)
-   Quota Firebase : 1 connexion WS par user, 0 polling
-   Cache hors-ligne et reconnexion automatiques.
-═══════════════════════════════════════════════════════════════ */
-
-/* _initSDK + auth : retourne une promesse résolue quand le SDK est authentifié */
-/* ═══════════════════════════════════════════════════════════════
-   QUOTA TRACKING — Comptage lecture/écriture/suppression Firebase
-   Stocké dans localStorage, réinitialisé chaque jour
+   QUOTA TRACKING — Comptage opérations (localStorage, réinitialisé chaque jour)
 ═══════════════════════════════════════════════════════════════ */
 const _qCols=['books','loans','users','requests','sessions','config','counters','loginLog','deletedUsers','shelfChecks','registrations'];
 let _qCache=null;
@@ -838,44 +645,12 @@ function _qTrack(type,count=1){
   if(document.getElementById('ap-quota')?.classList.contains('active')) rQuotaPanel();
 }
 
-/* ── Bump version pour notifier les autres clients ── */
-/* _bumpSync : notifie les autres clients qu'un document a changé.
-   Stocke l'ID du doc modifié pour éviter un re-fetch complet de la collection.
-   docId = null → changement multiple ou inconnu → re-fetch complet
-   isDelete = true → suppression → retirer le doc du cache local */
-async function _bumpSync(col, docId=null, isDelete=false){
-  if(!_qCols.includes(col)||col==='loginLog'||col==='deletedUsers')return;
-  const ts=Math.floor(Date.now()/1000);
-  const syncKey='_sv_'+col;
-  const idKey='_sv_'+col+'_id';
-  const idVal=docId?(isDelete?'DEL:'+String(docId):String(docId)):'';
-  const fields={[syncKey]:ts,[idKey]:idVal};
-  const mask=Object.keys(fields).map(k=>`updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-  const body=JSON.stringify({fields:toFsFields(fields)});
-  await fetch(`${FS_BASE}/config/sync_versions?${mask}`,{method:'PATCH',headers:fbH(),body}).catch(()=>{});
-}
-
-/* _bumpSyncBatch : notifie PLUSIEURS collections en 1 seule écriture.
-   Utilisé quand une action modifie plusieurs collections simultanément.
-   Ex: approveLoan modifie loans + books → 1 écriture au lieu de 2.
-   changes = [{col, docId, isDelete}, ...] */
-async function _bumpSyncBatch(changes){
-  if(!changes||!changes.length)return;
-  const ts=Math.floor(Date.now()/1000);
-  const fields={};
-  for(const {col,docId=null,isDelete=false} of changes){
-    if(!_qCols.includes(col)||col==='loginLog'||col==='deletedUsers')continue;
-    fields['_sv_'+col]=ts;
-    fields['_sv_'+col+'_id']=docId?(isDelete?'DEL:'+String(docId):String(docId)):'';
-  }
-  if(!Object.keys(fields).length)return;
-  const mask=Object.keys(fields).map(k=>`updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-  const body=JSON.stringify({fields:toFsFields(fields)});
-  await fetch(`${FS_BASE}/config/sync_versions?${mask}`,{method:'PATCH',headers:fbH(),body}).catch(()=>{});
-}
+/* Supabase Realtime notifie automatiquement tous les clients — pas de bump nécessaire */
+async function _bumpSync(){}
+async function _bumpSyncBatch(){}
 
 /* ═══════════════════════════════════════════════════════════════
-   CACHE localStorage — Évite les re-lectures Firebase au démarrage
+   CACHE localStorage — Évite les re-lectures Supabase au démarrage
    Clé : cb_data_{SPACE_ID}  /  TTL : 24h
 ═══════════════════════════════════════════════════════════════ */
 const _CACHE_TTL=24*60*60*1000;
@@ -917,44 +692,20 @@ function _cacheApply(c){
     if(cfg.logoB64)applyLogo(cfg.logoB64);
   }
   if(c.counters&&typeof c.counters==='object'){const d=c.counters;nxB=d.nxB||nxB;nxU=d.nxU||nxU;nxR=d.nxR||nxR;nxS=d.nxS||nxS;nxL=d.nxL||nxL;nxSC=d.nxSC||nxSC;nxReg=d.nxReg||nxReg;}
-  /* Retourner les collections manquantes/vides → seront re-fetché depuis Firebase */
+  /* Retourner les collections manquantes/vides → seront re-fetché depuis Supabase */
   const missing=[];
   if(!books.length)missing.push('books');
   if(!users.length)missing.push('users');
-  if(missing.length)console.warn('[Cache] Collections absentes ou vides:',missing,'→ re-fetch Firebase');
+  if(missing.length)console.warn('[Cache] Collections absentes ou vides:',missing,'→ re-fetch Supabase');
   return missing;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   SYNCHRONISATION TEMPS RÉEL — Architecture économe
-   1 seul onSnapshot sur config/sync_versions (1 lecture/changement)
-   REST pour les données — servi depuis cache si versions identiques
+   SYNCHRONISATION TEMPS RÉEL — Supabase Realtime (postgres_changes)
+   Cache localStorage pour démarrage instantané
 ═══════════════════════════════════════════════════════════════ */
-let _db=null;
+let _rtChannel=null;
 const _unsubs=[];
-
-async function _initSDK(){
-  if(_db)return _db;
-  let app;
-  try{app=firebase.app('cb-rt-'+SPACE_ID);}
-  catch(e){
-    app=firebase.initializeApp({
-      apiKey:FB_API_KEY,
-      authDomain:FB_PROJECT+'.firebaseapp.com',
-      projectId:FB_PROJECT,
-    },'cb-rt-'+SPACE_ID);
-  }
-  const auth=firebase.auth(app);
-  await new Promise(resolve=>{const u=auth.onAuthStateChanged(user=>{u();resolve(user);});});
-  if(!auth.currentUser){
-    try{await auth.signInAnonymously();console.log('[RT] Auth SDK : nouvelle session');}
-    catch(e){console.warn('[RT] Auth SDK échouée :',e.message);}
-  }else{console.log('[RT] Auth SDK : session restaurée (0 lecture)');}
-  _db=firebase.firestore(app);
-  return _db;
-}
-
-function _spaceCol(col){return _db.collection('spaces').doc(SPACE_ID).collection(col);}
 
 /* ── Garde de sécurité : fonctions admin uniquement ── */
 function _requireAdmin(fn=''){
@@ -1017,17 +768,6 @@ function _refreshView(cols){
   }catch(e){console.debug('[RT refresh]',e.message);}
 }
 
-/* ── Snapshot → tableau JS ── */
-function _snapToArr(snap){
-  const arr=[];
-  snap.forEach(doc=>{
-    const data=doc.data();const d={...data};
-    if(d.id===undefined||d.id===null){const raw=doc.id;d.id=/^\d+$/.test(raw)?parseInt(raw):raw;}
-    else if(typeof d.id==='string'&&/^\d+$/.test(d.id)){d.id=parseInt(d.id);}
-    arr.push(d);
-  });
-  return arr;
-}
 
 /* ── Fetch REST d'une collection + mise en cache ── */
 /* _fetchAndCache : met à jour une collection dans le cache.
@@ -1039,13 +779,13 @@ async function _fetchAndCache(col, sv){
 
   /* ── Config et Counters : toujours un seul document ── */
   if(col==='config'){
-    const d=await fbGetDoc('config','main');
+    const d=await sbGetDoc('config',SPACE_ID);
     if(d){cfg=Object.assign({openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:CA_DEFAULT},d);
       if(!cfg.catAccess)cfg.catAccess=CA_DEFAULT;if(cfg.logoB64)applyLogo(cfg.logoB64);}
     _cachePut({config:cfg});return;
   }
   if(col==='counters'){
-    const d=await fbGetDoc('counters','main');
+    const d=await sbGetDoc('counters',SPACE_ID);
     if(d){nxB=d.nxB||nxB;nxU=d.nxU||nxU;nxR=d.nxR||nxR;nxS=d.nxS||nxS;nxL=d.nxL||nxL;nxSC=d.nxSC||nxSC;nxReg=d.nxReg||nxReg;}
     /* Auto-repair : ajuster les compteurs si inférieurs aux IDs réels */
     const _maxId=(arr)=>arr.reduce((m,x)=>{const n=parseInt(x.id);return(!isNaN(n)&&n>m)?n:m;},0);
@@ -1055,7 +795,7 @@ async function _fetchAndCache(col, sv){
     if(requests.length){const m=_maxId(requests)+1;if(nxR<m){nxR=m;needsSave=true;}}
     if(sessions.length){const m=_maxId(sessions)+1;if(nxS<m){nxS=m;needsSave=true;}}
     if(loans.length){const m=_maxId(loans)+1;if(nxL<m){nxL=m;needsSave=true;}}
-    if(needsSave){_lastSavedCounters='';fbSaveCounters().catch(()=>{});console.log('[CB] Compteurs auto-réparés:',{nxB,nxU,nxR,nxS,nxL});}
+    if(needsSave){_lastSavedCounters='';sbSaveCounters().catch(()=>{});console.log('[CB] Compteurs auto-réparés:',{nxB,nxU,nxR,nxS,nxL});}
     _cachePut({counters:d});return;
   }
 
@@ -1079,8 +819,8 @@ async function _fetchAndCache(col, sv){
   }
 
   if(changedId&&changedId!==''){
-    /* Modification connue : fetch du seul document modifié — 1 lecture */
-    const d=await fbGetDoc(col,changedId);
+    /* Modification connue : fetch du seul document modifié */
+    const d=await sbGetDoc(col,changedId);
     if(d){
       /* Normaliser l'id */
       const normId=/^\d+$/.test(String(d.id))?parseInt(d.id):d.id;
@@ -1123,7 +863,7 @@ async function _fetchAndCache(col, sv){
   }
 
   /* ── Fetch complet : premier chargement ou changement multiple ── */
-  const data=await fbGetAll(col);
+  const data=await sbGetAll(col);
   if(col==='books')books=data;
   else if(col==='loans')loans=data;
   else if(col==='users'){users=_dedupById(data.map(u=>({...u,id:parseInt(u.id)||u.id})));
@@ -1134,7 +874,7 @@ async function _fetchAndCache(col, sv){
         const isPerm=['admin','resident','commission'].includes(u.role);
         if(isPerm&&(!u.neverExpires||u.expiresAt||u.disabled)){
           u.neverExpires=true;u.expiresAt=null;u.disabled=false;
-          fbUpd('users',u.id,{neverExpires:true,expiresAt:null,disabled:false}).catch(()=>{});
+          sbUpd('users',u.id,{neverExpires:true,expiresAt:null,disabled:false}).catch(()=>{});
           repaired++;
         }
       });
@@ -1147,11 +887,9 @@ async function _fetchAndCache(col, sv){
     }}
     const today=new Date().toISOString().split('T')[0];
     users.forEach(u=>{
-      /* Comptes avec neverExpires=true : jamais expirés */
       if(u.neverExpires)return;
-      /* Jamais expirer admin/resident/commission — uniquement si neverExpires non défini */
       if(u.expiresAt&&u.expiresAt<today&&!u.disabled&&!u.neverExpires&&u.role!=='admin'&&u.role!=='resident'&&u.role!=='commission')
-        fbUpd('users',u.id,{disabled:true}).catch(()=>{});
+        sbUpd('users',u.id,{disabled:true}).catch(()=>{});
     });
   }
   else if(col==='requests')requests=data;
@@ -1173,8 +911,8 @@ async function _fetchAllREST(){
 
 /* startRealtimeSync : async, garantit que les données sont chargées avant de retourner */
 async function startRealtimeSync(){
-  if(_unsubs.length&&dataReady){console.log('[RT] Déjà actif et prêt');return;}
-  dataReady=false; /* reset pour forcer l'attente */
+  if(_rtChannel&&dataReady){console.log('[RT] Déjà actif et prêt');return;}
+  dataReady=false;
 
   /* ── 1. Cache localStorage ── */
   const cache=_cacheGet();
@@ -1189,7 +927,7 @@ async function startRealtimeSync(){
     }
   }
 
-  /* ── 2. Pas de cache valide → fetch REST GARANTI ── */
+  /* ── 2. Pas de cache valide → fetch complet garanti ── */
   if(!dataReady){
     showLoading('Chargement des données…');
     try{
@@ -1201,56 +939,70 @@ async function startRealtimeSync(){
     }
   }
 
-  /* ── 3. SDK onSnapshot — temps réel (non bloquant, l'app est déjà prête) ── */
-  _initSDK().then(()=>{
-    _ensureRtDot();
-    const _onOnline=()=>{_setRtStatus(true);_showSyncToast('Reconnecté');};
-    const _onOffline=()=>{_setRtStatus(false);_showSyncToast('Hors ligne');};
-    window.addEventListener('online',_onOnline);window.addEventListener('offline',_onOffline);
-    _unsubs.push(()=>{window.removeEventListener('online',_onOnline);window.removeEventListener('offline',_onOffline);});
+  /* ── 3. Supabase Realtime (non bloquant, l'app est déjà prête) ── */
+  _initSb();
+  _ensureRtDot();
+  const _onOnline=()=>{_setRtStatus(true);_showSyncToast('Reconnecté');};
+  const _onOffline=()=>{_setRtStatus(false);_showSyncToast('Hors ligne');};
+  window.addEventListener('online',_onOnline);window.addEventListener('offline',_onOffline);
+  _unsubs.push(()=>{window.removeEventListener('online',_onOnline);window.removeEventListener('offline',_onOffline);});
 
-    const syncRef=_spaceCol('config').doc('sync_versions');
-    let _knownSv=cache?.sv||{};
-    let _rtReady=false;
+  /* Mappage collection app → table Supabase */
+  const _rtMap={
+    books:'books',loans:'loans',users:'users',
+    requests:'book_requests',sessions:'request_sessions',
+    registrations:'registrations',shelfChecks:'shelf_checks'
+  };
+  _rtChannel=sb.channel('space-'+SPACE_ID);
+  Object.entries(_rtMap).forEach(([col,tbl])=>{
+    _rtChannel.on('postgres_changes',
+      {event:'*',schema:'public',table:tbl,filter:`space_code=eq.${SPACE_ID}`},
+      payload=>_handleRT(col,payload));
+  });
+  _rtChannel.on('postgres_changes',
+    {event:'*',schema:'public',table:'space_config',filter:`space_code=eq.${SPACE_ID}`},
+    payload=>{if(payload.new)cfg=Object.assign({...cfg},payload.new);_refreshView(['config']);});
+  _rtChannel.on('postgres_changes',
+    {event:'*',schema:'public',table:'space_counters',filter:`space_code=eq.${SPACE_ID}`},
+    payload=>{if(payload.new){const d=payload.new;nxB=d.nxB||nxB;nxU=d.nxU||nxU;nxR=d.nxR||nxR;nxS=d.nxS||nxS;nxL=d.nxL||nxL;nxSC=d.nxSC||nxSC;nxReg=d.nxReg||nxReg;}});
+  _rtChannel.subscribe(status=>{
+    _setRtStatus(status==='SUBSCRIBED');
+    console.log('[RT] Supabase Realtime:',status);
+  });
+  _unsubs.push(()=>{if(_rtChannel){sb.removeChannel(_rtChannel);_rtChannel=null;}});
+  console.log('[RT] Supabase Realtime actif');
+}
 
-    _unsubs.push(syncRef.onSnapshot({includeMetadataChanges:false},async snap=>{
-      _qTrack('r',1);
-      const sv=snap.exists?snap.data():{};
-      const cols=['books','loans','users','requests','sessions','config','counters','registrations','shelfChecks'];
-      if(!_rtReady){
-        /* Premier fire : comparer le cache avec Firebase et refetcher les collections périmées.
-           Corrige le bug : si admin A a validé une inscription entre deux connexions de admin B,
-           _sv_registrations dans Firebase est plus récent que dans le cache → on refetch. */
-        const stale=[];
-        for(const c of cols){const k='_sv_'+c;if((sv[k]||0)>(_knownSv[k]||0))stale.push(c);}
-        _knownSv={..._knownSv,...sv};
-        _rtReady=true;
-        _cachePut({sv:_knownSv});
-        if(stale.length){
-          console.log('[RT] Données périmées depuis la dernière connexion:',stale.join(', '));
-          await Promise.all(stale.map(c=>_fetchAndCache(c,sv).catch(e=>console.warn('[RT]',c,e.message))));
-          _refreshView(stale);
-          _showSyncToast('🔄 Synchronisé');
-        }else{console.log('[RT] onSnapshot calibré — données à jour');}
-        return;
+function _handleRT(col,{eventType,new:n,old:o}){
+  const _arrMap={books,loans,users,requests,sessions,registrations,shelfChecks};
+  const arr=_arrMap[col];if(!arr)return;
+  if(eventType==='INSERT'){
+    if(col==='users'&&n.id){n.id=parseInt(n.id)||n.id;}
+    if(!arr.find(x=>String(x.id)===String(n.id)))arr.push(n);
+  }else if(eventType==='UPDATE'){
+    if(col==='users'){
+      n.id=parseInt(n.id)||n.id;
+      if(curUser&&String(curUser.id)===String(n.id)){
+        if(n.disabled&&!curUser.disabled){alert('Votre compte a été désactivé.');doLogout();return;}
+        curUser={...n};
       }
-      const toFetch=[];
-      for(const c of cols){const k='_sv_'+c;if((sv[k]||0)>(_knownSv[k]||0))toFetch.push(c);}
-      if(!toFetch.length)return;
-      _knownSv={..._knownSv,...sv};
-      console.log('[RT] MAJ:',toFetch.join(', '));
-      await Promise.all(toFetch.map(c=>_fetchAndCache(c,sv).catch(e=>console.warn('[RT]',c,e.message))));
-      _cachePut({sv:_knownSv});
-      _showSyncToast('🔄 Mis à jour');
-      _refreshView(toFetch);
-    },e=>{console.warn('[RT onSnapshot]',e.message);_setRtStatus(false);}));
-    console.log('[RT] Surveillance temps réel active');
-  }).catch(e=>console.warn('[RT] SDK indisponible (REST only):',e.message));
+    }
+    const i=arr.findIndex(x=>String(x.id)===String(n.id));
+    if(i>=0)arr[i]=n;else arr.push(n);
+  }else if(eventType==='DELETE'){
+    const delId=o?.id;
+    const i=arr.findIndex(x=>String(x.id)===String(delId));
+    if(i>=0)arr.splice(i,1);
+  }
+  _cachePut({[col]:arr});
+  _showSyncToast('🔄 Synchronisé');
+  _refreshView([col]);
 }
 
 function stopRealtimeSync(){
   _unsubs.forEach(u=>{try{u();}catch(e){}});_unsubs.length=0;
-  dataReady=false; /* Forcer un rechargement au prochain login */
+  _rtChannel=null;
+  dataReady=false;
   if(_rtDot){_rtDot.style.background='#94a3b8';_rtDot.title='Déconnecté';}
   console.log('[RT] Synchronisation arrêtée');
 }
@@ -1311,7 +1063,7 @@ async function toggleLoanOption(enabled){
   const pill=document.getElementById('loan-status-pill');
   const info=document.getElementById('loan-option-info');
   try{
-    await fbUpd('config','main',{loanOpen:enabled});
+    await sbUpd('config','main',{loanOpen:enabled});
     cfg.loanOpen=enabled;
     if(pill){pill.textContent=enabled?'● Actif':'● Désactivé';pill.style.background=enabled?'#d1fae5':'#ede9fe';pill.style.color=enabled?'#065f46':'#7c3aed';}
     if(info)info.style.display=enabled?'block':'none';
@@ -1429,23 +1181,19 @@ async function doLogin(){
   if(btn)btn.disabled=true;
   errEl.textContent='Vérification…';
   try{
-    /* Chercher l'utilisateur par abbrev via Firestore structuredQuery (users[] non chargé en mémoire) */
-    const queryUrl=`${FS_BASE}:runQuery`;
-    const queryBody={structuredQuery:{from:[{collectionId:'users'}],where:{fieldFilter:{field:{fieldPath:'abbrev'},op:'EQUAL',value:{stringValue:code}}},limit:1}};
-    const qRes=await fetch(queryUrl,{method:'POST',headers:fbH(),body:JSON.stringify(queryBody)});
-    if(!qRes.ok){errEl.textContent='Erreur serveur. Réessayez.';return;}
-    const qData=await qRes.json();
-    const hit=qData[0];
-    if(!hit||!hit.document){errEl.textContent='Code non reconnu. Contactez l\'administrateur.';return;}
-    const u=fromFsDoc(hit.document);
-    const docName=hit.document.name||'';
-    u.id=parseInt(docName.split('/').pop())||u.id;
+    /* Chercher l'utilisateur par abbrev via Supabase */
+    _initSb();
+    const {data:uRows,error:uErr}=await sb.from('users').select('*')
+      .eq('space_code',SPACE_ID).eq('abbrev',code).limit(1);
+    if(uErr){errEl.textContent='Erreur serveur. Réessayez.';return;}
+    const u=uRows?.[0]||null;
+    if(!u){errEl.textContent='Code non reconnu. Contactez l\'administrateur.';return;}
+    u.id=parseInt(u.id)||u.id;
     if(u.disabled){errEl.textContent='Ce compte est désactivé. Contactez l\'administrateur.';return;}
     /* Vérifier expiration du compte */
     const todayLoginStr=new Date().toISOString().split('T')[0];
     if(u.expiresAt&&u.expiresAt<todayLoginStr&&!u.neverExpires&&u.role!=='admin'&&u.role!=='resident'&&u.role!=='commission'){
-      /* Désactiver automatiquement */
-      fbUpd('users',u.id,{disabled:true}).catch(()=>{});
+      sbUpd('users',u.id,{disabled:true}).catch(()=>{});
       errEl.textContent='Votre compte a expiré le '+u.expiresAt+'. Contactez l\'administrateur.';
       return;
     }
@@ -1469,8 +1217,8 @@ async function doLogin(){
       time:new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),
       device:detectDevice(),browser:detectBrowser()};
     loginLog.unshift(logEntry);
-    fbSet('loginLog',logEntry.id,logEntry).catch(()=>{});
-    fbSaveCounters().catch(()=>{});
+    sbSet('loginLog',logEntry.id,logEntry).catch(()=>{});
+    sbSaveCounters().catch(()=>{});
   }catch(e){
     errEl.textContent='Erreur : '+e.message;
     console.error('[doLogin]',e);
@@ -1983,8 +1731,8 @@ async function rqCf(){
     motif:cfg.propMotif||'',sessionId:cfg.currentSessionId,
     dem:curUser.id,status:'pending',note:'',date:todayStr()};
   try{
-    await fbSet('requests',entry.id,entry);
-    await fbSaveCounters();
+    await sbSet('requests',entry.id,entry);
+    await sbSaveCounters();
     requests.push(entry);
     gtoSt(3);updPDFBtn();updRB();
   }catch(e){
@@ -2078,13 +1826,13 @@ async function delRq(id){
   if(!confirm(`Supprimer définitivement la demande "${r.titre}" ?\n\nCette action est irréversible.`))return;
   requests=requests.filter(x=>x.id!=id);
   rAdmRq();rComT&&rComT();updPDFBtn();
-  try{await fbDel('requests',id);}catch(e){console.warn('[delRq]',e.message);}
+  try{await sbDel('requests',id);}catch(e){console.warn('[delRq]',e.message);}
   _showSyncToast('🗑️ Demande supprimée');
 }
 async function chgSt(id,s,src){
   const r=requests.find(x=>x.id==id);if(!r)return;
   r.status=s;
-  try{await fbUpd('requests',id,{status:s});}catch(e){console.error('[chgSt]',e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+  try{await sbUpd('requests',id,{status:s});}catch(e){console.error('[chgSt]',e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
   if(src==='com'){rComSt();rComT();}else rAdmRq();
   updPDFBtn();
 }
@@ -2168,9 +1916,9 @@ async function opPropCom(){
   if(!m){document.getElementById('com-motif-err').textContent='Le motif est obligatoire.';return;}
   const sess={id:nxS++,motif:m,openDate:todayStr(),openUntil:d||null,closed:false,closedDate:null};
   try{
-    await fbSet('sessions',sess.id,sess);
+    await sbSet('sessions',sess.id,sess);
     cfg.propMotif=m;cfg.openAll=true;cfg.openUntil=d||null;cfg.currentSessionId=sess.id;
-    await fbSaveCfg();await fbSaveCounters();
+    await sbSaveCfg();await sbSaveCounters();
     sessions.push(sess);
     rComAuth();rSessList();
     document.getElementById('adm-motif').value=m;rPropSt();
@@ -2179,12 +1927,12 @@ async function opPropCom(){
 async function clPropCom(){
   if(cfg.currentSessionId){
     const s=sessions.find(x=>x.id==cfg.currentSessionId);
-    if(s){s.closed=true;s.closedDate=todayStr();try{await fbUpd('sessions',s.id,{closed:true,closedDate:s.closedDate});}catch(e){console.error('[clProp]',e.message);_showSyncToast('⚠️ Fermeture non sauvegardée');}}
+    if(s){s.closed=true;s.closedDate=todayStr();try{await sbUpd('sessions',s.id,{closed:true,closedDate:s.closedDate});}catch(e){console.error('[clProp]',e.message);_showSyncToast('⚠️ Fermeture non sauvegardée');}}
   }
   cfg.openAll=false;cfg.openUntil=null;cfg.currentSessionId=null;
   document.getElementById('com-until').value='';
   rComAuth();rSessList();rPropSt();
-  try{await fbSaveCfg();}catch(e){console.error('[fbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
+  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2243,7 +1991,7 @@ async function bulkTogP(v){
   for(const id of ids){
     const u=users.find(x=>x.id==id);if(!u)continue;
     u.canPropose=v;
-    try{await fbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+    try{await sbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
   }
   mbrSelected.clear();rComUsers();
 }
@@ -2251,7 +1999,7 @@ async function comTogAll(v){
   if(!confirm(v?'Autoriser TOUS les membres à proposer des livres ?':"Retirer l'autorisation à TOUS les membres ?"))return;
   for(const u of users){
     u.canPropose=v;
-    try{await fbUpd('users',u.id,{canPropose:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+    try{await sbUpd('users',u.id,{canPropose:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
   }
   rComUsers();
 }
@@ -2259,12 +2007,12 @@ async function comTogP(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
   u.canPropose=v;
   rComUsers();
-  try{await fbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 async function comSetUntil(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
   u.propUntil=v||null;
-  try{await fbUpd('users',id,{propUntil:v||null});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{propUntil:v||null});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2373,7 +2121,7 @@ async function savePdfConfig(btn){
   if(!checked.length){alert('Sélectionnez au moins une colonne.');return;}
   cfg.pdfFields=checked;
   modal.remove();
-  try{await fbSaveCfg();}catch(e){console.error('[fbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
+  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 function exportPDF(){
   const approved=requests.filter(r=>r.status==='approved');
@@ -2621,7 +2369,7 @@ async function delBk(id){
 Cette action est irréversible.`))return;
   const idx=books.findIndex(x=>x.id==id);if(idx!==-1)books.splice(idx,1);
   rAdmBk();rCat();
-  try{await fbDel('books',id);}catch(e){console.error('[delBk]',e.message);alert('❌ Erreur suppression livre : '+e.message);}
+  try{await sbDel('books',id);}catch(e){console.error('[delBk]',e.message);alert('❌ Erreur suppression livre : '+e.message);}
 }
 async function togBkStatus(id,src){
   const b=books.find(x=>x.id==id);if(!b)return;
@@ -2629,13 +2377,13 @@ async function togBkStatus(id,src){
     if(!confirm(`Marquer "${b.titre}" comme retrouvé et le remettre disponible ?`))return;
     const prevSt=b.status;
     b.status='available';b.missingAt=null;b.missingNote=null;
-    try{await fbUpd('books',id,{status:'available',missingAt:null,missingNote:null,lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    try{await sbUpd('books',id,{status:'available',missingAt:null,missingNote:null,lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
     _logBookChange(id,b.titre,{status:{from:prevSt,to:'available'}});
   }else{
     const nxt=b.status==='retired'?'available':'retired';
     if(nxt==='retired'&&!confirm(`Retirer "${b.titre}" du catalogue ?`))return;
     const prevSt2=b.status;b.status=nxt;
-    try{await fbUpd('books',id,{status:nxt,lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    try{await sbUpd('books',id,{status:nxt,lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
     _logBookChange(id,b.titre,{status:{from:prevSt2,to:nxt}});
   }
   if(src==='ca')rCABk();else rAdmBk();rCat();
@@ -2647,14 +2395,14 @@ async function reportMissing(id){
   if(b.status==='missing'){
     if(!confirm(`"${b.titre}" est déjà signalé introuvable.\nCliquez OK pour le marquer comme retrouvé.`))return;
     b.status='available';b.missingAt=null;b.missingNote=null;
-    try{await fbUpd('books',id,{status:'available',missingAt:null,missingNote:null});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    try{await sbUpd('books',id,{status:'available',missingAt:null,missingNote:null});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
     cM('mdet');rCat();rAdmBk();_showSyncToast('✅ Livre retrouvé — remis disponible');return;
   }
   const note=prompt(`Signaler "${b.titre}" comme introuvable à son emplacement.\n\nNote optionnelle (ex : vérifié le ${new Date().toLocaleDateString('fr-FR')}, absent de l'étagère) :`,'');
   if(note===null)return;
   const now=new Date().toISOString();
   b.status='missing';b.missingAt=now;b.missingNote=note||'';
-  try{await fbUpd('books',id,{status:'missing',missingAt:now,missingNote:note||'',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+  try{await sbUpd('books',id,{status:'missing',missingAt:now,missingNote:note||'',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
   _logBookChange(id,b.titre,{status:{from:'available',to:'missing'},note:note||''});
   cM('mdet');rCat();rAdmBk();_showSyncToast('⚠️ Livre signalé introuvable');
 }
@@ -2815,7 +2563,7 @@ async function savBk(){
       lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'};
     const i=books.findIndex(b=>b.id==bfEid);
     try{
-      await fbUpd('books',bfEid,updFields);
+      await sbUpd('books',bfEid,updFields);
       if(i>=0)books[i]={...books[i],...updFields};
       if(changedFields.length>0)_logBookChange(bfEid,d.titre,
         Object.fromEntries(changedFields.map(k=>([k,{from:existing?.[k],to:d[k]}]))));
@@ -2824,8 +2572,8 @@ async function savBk(){
     const nb={id:nxB++,...d,status:'available',addedAt:now,updatedAt:now,updatedBy:who,version:1,
       lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'};
     try{
-      await fbSet('books',nb.id,nb);
-      await fbSaveCounters();
+      await sbSet('books',nb.id,nb);
+      await sbSaveCounters();
       if(!books.find(b=>String(b.id)===String(nb.id)))books.push(nb);
       _logBookChange(nb.id,nb.titre,{action:'ajout'});
     }catch(e){
@@ -2866,7 +2614,7 @@ function rAdmRq(){
 }
 async function updN(id,v){
   const r=requests.find(x=>x.id==id);if(r)r.note=v;
-  try{await fbUpd('requests',id,{note:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('requests',id,{note:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2969,7 +2717,7 @@ function rAdmUs(){
 }
 async function togP(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;u.canPropose=v;rAdmUs();
-  try{await fbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3093,7 +2841,7 @@ async function togDisable(id){if(!_requireAdmin('togDisable'))return;
   if(u.role==='admin'&&countAdmins()<=1&&!u.disabled){alert('⚠️ Seul administrateur.');return;}
   if(u.id==curUser.id&&!u.disabled){alert('⚠️ Vous ne pouvez pas désactiver votre propre compte.');return;}
   u.disabled=!u.disabled;rAdmUs();
-  try{await fbUpd('users',id,{disabled:u.disabled});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{disabled:u.disabled});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 /* ── Logo organisation ── */
 function applyLogo(b64){
@@ -3133,7 +2881,7 @@ function onLogoFile(input){
       const b64=canvas.toDataURL('image/png',0.92);
       cfg.logoB64=b64;
       applyLogo(b64);
-      try{await fbSaveCfg();}catch(err){console.warn('Logo non sauvegardé:',err);}
+      try{await sbSaveCfg();}catch(err){console.warn('Logo non sauvegardé:',err);}
     };
     img.src=e.target.result;
   };
@@ -3142,7 +2890,7 @@ function onLogoFile(input){
 async function clearLogo(){
   cfg.logoB64=null;
   applyLogo(null);
-  try{await fbSaveCfg();}catch(e){console.error('[fbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
+  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 let ufPhotoB64=null;
 function onMbrPhoto(input){
@@ -3378,17 +3126,13 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     return;
   }
   if(!ufEid){
-    /* Vérification Firebase pour garantir l'unicité même en cas de création concurrente */
+    /* Vérification Supabase pour garantir l'unicité même en cas de création concurrente */
     document.getElementById('ufe').textContent='Vérification du code…';
     try{
-      const checkUrl=`${FS_BASE}:runQuery`;
-      const checkBody={structuredQuery:{from:[{collectionId:'users'}],where:{fieldFilter:{field:{fieldPath:'abbrev'},op:'EQUAL',value:{stringValue:ab}}},limit:1}};
-      const chkRes=await fetch(checkUrl,{method:'POST',headers:fbH(),body:JSON.stringify(checkBody)});
-      if(chkRes.ok){
-        const chkData=await chkRes.json();
-        if(chkData[0]?.document){document.getElementById('ufe').textContent='Ce code de connexion existe déjà dans la base. Choisissez-en un autre.';return;}
-      }
-    }catch(e){console.warn('Check abbrev FB:',e);}
+      _initSb();
+      const {data:chkData}=await sb.from('users').select('id').eq('space_code',SPACE_ID).eq('abbrev',ab).limit(1);
+      if(chkData?.[0]){document.getElementById('ufe').textContent='Ce code de connexion existe déjà dans la base. Choisissez-en un autre.';return;}
+    }catch(e){console.warn('Check abbrev SB:',e);}
     document.getElementById('ufe').textContent='';
   }
   const canLoanEl=document.getElementById('ufcanloan');
@@ -3409,11 +3153,11 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     if(isPermanentRole){updFields.neverExpires=true;updFields.expiresAt=null;}
     else if(isNeverExp){updFields.expiresAt=null;}else if(expUpdVal){updFields.expiresAt=expUpdVal;}
     if(i>=0){users[i].neverExpires=isPermanentRole||isNeverExp;if(!isPermanentRole&&expUpdVal)users[i].expiresAt=expUpdVal;if(isPermanentRole)users[i].expiresAt=null;}
-    try{await fbUpd('users',ufEid,updFields);}catch(e){console.error(e);alert('❌ Erreur de mise à jour : '+e.message);}
+    try{await sbUpd('users',ufEid,updFields);}catch(e){console.error(e);alert('❌ Erreur de mise à jour : '+e.message);}
   } else {
     /* ── Création d'un nouveau compte ── */
     /* 1. Lire le compteur frais depuis Firebase pour éviter les collisions entre sessions */
-    try{const d=await fbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
+    try{const d=await sbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
     const newId=_nextUserId();
     /* Rôles permanents : jamais d'expiration */
     const isPermanentRole=['admin','resident','commission'].includes(rl);
@@ -3422,9 +3166,9 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     const nu={id:newId,abbrev:ab,prenom:pn,nom:nm,role:rl,canPropose:cp,propUntil:null,disabled:false,expiresAt:expVal,neverExpires:isNeverExp,...extras};
     try{
       /* 2. Sauvegarder le compteur EN PREMIER pour réserver l'ID */
-      await fbSaveCounters();
+      await sbSaveCounters();
       /* 3. Sauvegarder l'utilisateur dans Firebase */
-      await fbSet('users',newId,nu);
+      await sbSet('users',newId,nu);
       /* 4. Seulement si Firebase confirme : ajouter au tableau local */
       if(!users.find(u=>String(u.id)===String(newId)))users.push(nu);
     }catch(e){
@@ -3457,14 +3201,14 @@ async function delU(id){if(!_requireAdmin('delU'))return;
     const now=new Date().toISOString();
     for(const l of activeLoans){
       try{
-        await fbUpd('loans',l.id,{status:'returned',validatedAt:now,validatedBy:'SYSTEM — Compte supprimé'});
+        await sbUpd('loans',l.id,{status:'returned',validatedAt:now,validatedBy:'SYSTEM — Compte supprimé'});
         l.status='returned';l.validatedAt=now;
         const b=books.find(x=>x.id==l.bookId);
         if(b){
           const stillActive=loans.filter(x=>x.bookId==l.bookId&&x.status==='active'&&x.id!==l.id).length;
           if(stillActive===0){
             b.status='available';b.borrowedBy=null;b.borrowedUntil=null;
-            await fbUpd('books',l.bookId,{status:'available',borrowedBy:null,borrowedUntil:null,activeLoans:0});
+            await sbUpd('books',l.bookId,{status:'available',borrowedBy:null,borrowedUntil:null,activeLoans:0});
           }
         }
       }catch(e){console.warn('[delU] Clôture emprunt',l.id,e.message);}
@@ -3477,8 +3221,8 @@ async function delU(id){if(!_requireAdmin('delU'))return;
   const archived={...u,deletedAt:new Date().toLocaleDateString('fr-FR'),deletedBy:curUser.prenom+' '+curUser.nom};
   deletedUsers.unshift(archived);
   try{
-    await fbDel('users',id);
-    await fbSet('deletedUsers',id,archived);
+    await sbDel('users',id);
+    await sbSet('deletedUsers',id,archived);
     const idx=users.findIndex(x=>x.id==id);if(idx!==-1)users.splice(idx,1);
     rAdmUs();rAdmDelUs();rCat();updAdmLoansBadge();
   }catch(e){console.error('[delU]',e.message);alert('❌ Erreur suppression compte : '+e.message);}
@@ -3487,7 +3231,7 @@ function rAdmDelUs(){
   const tb=document.getElementById('del-utb');if(!tb)return;
   /* Chargement à la demande — évite les lectures Firebase au démarrage */
   if(!deletedUsers.length){
-    fbGetAll('deletedUsers').then(delD=>{
+    sbGetAll('deletedUsers').then(delD=>{
       deletedUsers=delD.sort((a,b)=>String(b.deletedAt||'').localeCompare(String(a.deletedAt||'')));
       _rAdmDelUsRender();
     }).catch(e=>console.warn('[rAdmDelUs]',e.message));
@@ -3519,7 +3263,7 @@ async function clearDeletedUsers(){
   if(!confirm('Vider définitivement la liste des '+deletedUsers.length+' membre(s) supprimé(s) ?\n\nCette action supprime les archives de Firebase. Elle est irréversible.'))return;
   let ok=0,fail=0;
   for(const u of deletedUsers){
-    try{await fbDel('deletedUsers',u.id);ok++;}
+    try{await sbDel('deletedUsers',u.id);ok++;}
     catch(e){fail++;console.warn('[clearDel]',u.id,e.message);}
   }
   deletedUsers=[];
@@ -3545,9 +3289,9 @@ async function opProp(){
   if(!m){document.getElementById('adm-motif-err').textContent='Le motif est obligatoire.';return;}
   const sess={id:nxS++,motif:m,openDate:todayStr(),openUntil:d||null,closed:false,closedDate:null};
   try{
-    await fbSet('sessions',sess.id,sess);
+    await sbSet('sessions',sess.id,sess);
     cfg.propMotif=m;cfg.openAll=true;cfg.openUntil=d||null;cfg.currentSessionId=sess.id;
-    await fbSaveCfg();await fbSaveCounters();
+    await sbSaveCfg();await sbSaveCounters();
     sessions.push(sess);
     rPropSt();rAdmUs();document.getElementById('com-motif').value=m;
   }catch(e){nxS--;console.error('[opProp]',e);alert('❌ Erreur : la session n\'a pas été ouverte.\n'+e.message);}
@@ -3555,13 +3299,13 @@ async function opProp(){
 async function clProp(){
   if(cfg.currentSessionId){
     const s=sessions.find(x=>x.id==cfg.currentSessionId);
-    if(s){s.closed=true;s.closedDate=todayStr();try{await fbUpd('sessions',s.id,{closed:true,closedDate:s.closedDate});}catch(e){console.error('[clProp]',e.message);_showSyncToast('⚠️ Fermeture non sauvegardée');}}
+    if(s){s.closed=true;s.closedDate=todayStr();try{await sbUpd('sessions',s.id,{closed:true,closedDate:s.closedDate});}catch(e){console.error('[clProp]',e.message);_showSyncToast('⚠️ Fermeture non sauvegardée');}}
   }
   cfg.openAll=false;cfg.openUntil=null;cfg.currentSessionId=null;cfg.propMotif='';
   document.getElementById('pun').value='';
   document.getElementById('adm-motif').value='';
   rPropSt();rAdmUs();updRB();
-  try{await fbSaveCfg();}catch(e){console.error('[fbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
+  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3649,7 +3393,7 @@ async function toggleIndivSpiritual(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
   u.canSeeSpiritual=v;
   rCatAccessPanel();
-  try{await fbUpd('users',id,{canSeeSpiritual:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{canSeeSpiritual:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 async function toggleCatAccess(role,type,v){
   if(!cfg.catAccess)cfg.catAccess={member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
@@ -3658,7 +3402,7 @@ async function toggleCatAccess(role,type,v){
   else{cfg.catAccess[role]=cfg.catAccess[role].filter(x=>x!==type);}
   /* Re-rendre immédiatement — ne pas attendre le snapshot Firebase */
   rCatAccessPanel();
-  try{await fbSaveCfg();}catch(e){console.warn('[toggleCatAccess]',e);}
+  try{await sbSaveCfg();}catch(e){console.warn('[toggleCatAccess]',e);}
 }
 /* ═══════════════════════════════════════════════════════════════
    DIAGNOSTIC — Détection des anomalies de données
@@ -3701,7 +3445,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
       fix:async()=>{
         for(const b of borrowedNoLoan){
           b.status='available';b.borrowedBy=null;b.borrowedUntil=null;
-          await fbUpd('books',b.id,{status:'available',borrowedBy:null,borrowedUntil:null}).catch(()=>{});
+          await sbUpd('books',b.id,{status:'available',borrowedBy:null,borrowedUntil:null}).catch(()=>{});
         }
       }
     });
@@ -3719,7 +3463,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
         const now2=new Date().toISOString();
         for(const l of orphanLoanBook){
           l.status='returned';l.validatedAt=now2;l.validatedBy='DIAG';
-          await fbUpd('loans',l.id,{status:'returned',validatedAt:now2,validatedBy:'DIAG'}).catch(()=>{});
+          await sbUpd('loans',l.id,{status:'returned',validatedAt:now2,validatedBy:'DIAG'}).catch(()=>{});
         }
       }
     });
@@ -3739,8 +3483,8 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
           l.status='returned';l.validatedAt=now2;l.validatedBy='DIAG';
           const b=bookById(l.bookId);
           if(b){b.status='available';b.borrowedBy=null;b.borrowedUntil=null;
-            await fbUpd('books',l.bookId,{status:'available',borrowedBy:null,borrowedUntil:null}).catch(()=>{});}
-          await fbUpd('loans',l.id,{status:'returned',validatedAt:now2,validatedBy:'DIAG'}).catch(()=>{});
+            await sbUpd('books',l.bookId,{status:'available',borrowedBy:null,borrowedUntil:null}).catch(()=>{});}
+          await sbUpd('loans',l.id,{status:'returned',validatedAt:now2,validatedBy:'DIAG'}).catch(()=>{});
         }
       }
     });
@@ -3756,7 +3500,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
       fix:async()=>{
         for(const b of zeroExpl){
           b.exemplaires=1;
-          await fbUpd('books',b.id,{exemplaires:1}).catch(()=>{});
+          await sbUpd('books',b.id,{exemplaires:1}).catch(()=>{});
         }
       }
     });
@@ -3890,7 +3634,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
         if(!confirm('Remettre ces '+allMissing.length+' livre(s) en "Disponible" ?\nN\'utilisez cette correction que si les livres ont effectivement été retrouvés.'))return;
         for(const b of allMissing){
           b.status='available';b.missingAt=null;b.missingNote=null;
-          await fbUpd('books',b.id,{status:'available',missingAt:null,missingNote:null}).catch(()=>{});
+          await sbUpd('books',b.id,{status:'available',missingAt:null,missingNote:null}).catch(()=>{});
         }
       }
     });
@@ -4091,23 +3835,13 @@ async function submitPubRegister(){
   if(!prenom||!nom||!whatsapp||!commune){err.textContent='Les champs marqués * sont obligatoires.';return;}
   const btn=document.getElementById('reg-submit-btn');
   if(btn){btn.disabled=true;btn.textContent='Envoi en cours…';btn.style.opacity='.6';}
-  if(!fbToken){try{await fbAuthAnon();}catch(e){}}
-  if(!FS_BASE)FS_BASE=`${FS_ROOT}/spaces/${SPACE_ID}`;
+  _initSb();
   const regId='reg_'+Date.now();
-  const entry={id:regId,prenom,nom,whatsapp,commune,profession,email,
+  const entry={id:regId,space_code:SPACE_ID,prenom,nom,whatsapp,commune,profession,email,
     status:'pending',submittedAt:new Date().toISOString()};
   try{
-    const r=await fetch(`${FS_BASE}/registrations/${regId}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields(entry)})});
-    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error?.message||'HTTP '+r.status);}
-    /* Notifier l'admin via sync_versions — utilise millisecondes pour éviter les collisions
-       si 2 inscriptions arrivent dans la même seconde */
-    try{
-      await fetch(`${FS_BASE}/config/sync_versions?updateMask.fieldPaths=_sv_registrations&updateMask.fieldPaths=_sv_registrations_id`,
-        {method:'PATCH',headers:fbH(),body:JSON.stringify({fields:toFsFields({
-          _sv_registrations:Date.now(), /* millisecondes, plus précis que Math.floor(Date.now()/1000) */
-          _sv_registrations_id:regId
-        })})});
-    }catch(e){/* best-effort — ne pas bloquer la confirmation */}
+    const {error}=await sb.from('registrations').upsert(entry);
+    if(error)throw new Error(error.message);
     _showRegSuccess(prenom);
   }catch(e){
     if(err)err.textContent='Erreur lors de l\'envoi : '+e.message;
@@ -4140,25 +3874,13 @@ async function _loadPubCat(){
   const grid=document.getElementById('pub-cgrid');
   const cntEl=document.getElementById('pub-bkc');
 
-  /* S'assurer qu'on a un token Firebase (nécessaire pour lire Firestore) */
-  if(!fbToken){
-    try{await fbAuthAnon();}
-    catch(e){
-      console.warn('[PubCat] Auth échouée:',e.message);
-      /* Essayer sans token si les règles Firestore autorisent les lectures publiques */
-    }
-  }
+  _initSb();
+  if(!SPACE_ID){if(grid)grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--g400)">Code de bibliothèque introuvable dans l\'URL.</div>';return;}
 
-  /* S'assurer que FS_BASE est défini (peut ne pas l'être si appelé trop tôt) */
-  if(!FS_BASE){
-    if(!SPACE_ID){if(grid)grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--g400)">Code de bibliothèque introuvable dans l\'URL.</div>';return;}
-    FS_BASE=`${FS_ROOT}/spaces/${SPACE_ID}`;
-  }
-
-  /* Lire les livres depuis Firebase */
+  /* Lire les livres depuis Supabase */
   let data=[];
   try{
-    data=await fbGetAll('books');
+    data=await sbGetAll('books');
   }catch(e){
     console.warn('[PubCat] Lecture livres échouée:',e.message);
     let msg='';let detail='';
@@ -4441,7 +4163,7 @@ async function saveMyProfile(){
   /* Nettoyer les valeurs null */
   Object.keys(updates).forEach(k=>{if(updates[k]===null)delete updates[k];});
   try{
-    await fbUpd('users',curUser.id,updates);
+    await sbUpd('users',curUser.id,updates);
     Object.assign(curUser,updates);
     /* Mettre à jour l'affichage du nom dans la nav */
     const n0=document.getElementById('n0');if(n0)n0.textContent=curUser.abbrev||'—';
@@ -4455,7 +4177,7 @@ function rLoginLog(){
   /* Chargement à la demande — loginLog non chargé au démarrage pour économiser le quota */
   if(!loginLog.length){
     tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--g400)">⏳ Chargement du journal…</td></tr>';
-    fbGetAll('loginLog').then(logD=>{
+    sbGetAll('loginLog').then(logD=>{
       loginLog=logD.sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,300);
       _rLoginLogRender();
     }).catch(e=>{tb.innerHTML=`<tr><td colspan="7" style="color:#dc2626;padding:16px">Erreur : ${e.message}</td></tr>`;});
@@ -4483,17 +4205,10 @@ async function clearLog(){
   loginLog=[];
   rLoginLog();
   if(ids.length===0)return;
-  /* Suppression individuelle via DELETE HTTP direct — plus fiable que batchWrite */
-  let ok=0,fail=0;
-  for(const id of ids){
-    try{
-      const url=`${FS_BASE}/loginLog/${id}`;
-      const r=await fetch(url,{method:'DELETE',headers:fbH()});
-      if(r.ok||r.status===404){ok++;}
-      else{fail++;console.warn('clearLog DELETE',id,'→',r.status);}
-    }catch(e){fail++;console.warn('clearLog DELETE',id,e.message);}
-  }
-  console.log('[CB] Journal vidé :',ok,'supprimé(s)',fail>0?fail+' échec(s)':'');
+  _initSb();
+  const {error}=await sb.from('login_logs').delete().in('id',ids).eq('space_code',SPACE_ID);
+  if(error)console.warn('clearLog error:',error.message);
+  else console.log('[CB] Journal vidé :',ids.length,'supprimé(s)');
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -4543,21 +4258,13 @@ async function _testsData(){
 
 async function _testsFirebase(){
   const res=[];
-  if(!fbToken){try{await fbAuthAnon();}catch(e){}}
-  res.push(_tr(!!fbToken,'Firebase Auth : token valide',fbToken?'Token obtenu ('+fbToken.substring(0,16)+'...)':'Pas de token'));
-  if(!fbToken)return res;
-  try{const d=await fbGetDoc('config','main');res.push(_tr(!!d,'Firebase Lecture : config/main',d?'Lu avec succes':'Introuvable'));}catch(e){res.push(_tr(false,'Firebase Lecture : config/main',e.message));}
-  if(books.length){try{const d=await fbGetDoc('books',books[0].id);res.push(_tr(!!(d&&d.titre===books[0].titre),'Firebase Lecture : livre test',d?'"'+books[0].titre+'" coherent':'Incoherence'));}catch(e){res.push(_tr(false,'Firebase Lecture : livre test',e.message));}}
-  if(users.length){const tu=users.find(u=>u.id==curUser?.id)||users[0];try{const d=await fbGetDoc('users',tu.id);res.push(_tr(!!(d&&d.abbrev===tu.abbrev),'Firebase Lecture : utilisateur test',d?tu.abbrev+' coherent':'Incoherence'));}catch(e){res.push(_tr(false,'Firebase Lecture : utilisateur test',e.message));}}
-  const tid='_cbtest_'+Date.now();
-  try{
-    await fbSet('config',tid,{_test:true,ts:new Date().toISOString()});
-    const rb=await fbGetDoc('config',tid);
-    try{await fetch(`${FS_BASE}/config/${tid}`,{method:'DELETE',headers:fbH()});}catch(e){}
-    res.push(_tr(!!(rb&&rb._test),'Firebase Ecriture + Lecture + Suppression',rb?'Cycle complet reussi (doc de test supprime)':'Echec'));
-  }catch(e){try{await fetch(`${FS_BASE}/config/${tid}`,{method:'DELETE',headers:fbH()});}catch(e2){}res.push(_tr(false,'Firebase Ecriture/Lecture/Suppression',e.message));}
-  /* Test 6 : Sync temps reel actif (utilise le flag _rtOnline, pas la couleur CSS) */
-  res.push(_tr(_rtOnline,'Synchronisation temps reel',_rtOnline?'Connexion active — synchronisation en temps reel':'Hors ligne — verifiez votre connexion internet',!_rtOnline));
+  _initSb();
+  res.push(_tr(!!sb,'Supabase client : initialisé',sb?'Client prêt (anon key OK)':'Échec init'));
+  try{const d=await sbGetDoc('config',SPACE_ID);res.push(_tr(!!d,'Supabase Lecture : space_config',d?'Lu avec succès':'Introuvable'));}catch(e){res.push(_tr(false,'Supabase Lecture : space_config',e.message));}
+  if(books.length){try{const d=await sbGetDoc('books',books[0].id);res.push(_tr(!!(d&&d.titre===books[0].titre),'Supabase Lecture : livre test',d?'"'+books[0].titre+'" cohérent':'Incohérence'));}catch(e){res.push(_tr(false,'Supabase Lecture : livre test',e.message));}}
+  if(users.length){const tu=users.find(u=>u.id==curUser?.id)||users[0];try{const d=await sbGetDoc('users',tu.id);res.push(_tr(!!(d&&d.abbrev===tu.abbrev),'Supabase Lecture : utilisateur test',d?tu.abbrev+' cohérent':'Incohérence'));}catch(e){res.push(_tr(false,'Supabase Lecture : utilisateur test',e.message));}}
+  /* Sync temps réel */
+  res.push(_tr(_rtOnline,'Synchronisation temps réel',_rtOnline?'Connexion active — Supabase Realtime':'Hors ligne — vérifiez votre connexion',!_rtOnline));
   return res;
 }
 
@@ -4574,7 +4281,7 @@ async function _testsPublic(){
 /* Naviguer vers l'onglet Utilisateurs et y trouver un user par ID */
 /* Recalculer et sauvegarder les compteurs depuis les données réelles */
 async function repairCounters(){if(!_requireAdmin('repairCounters'))return;
-  if(!confirm('Recalculer et sauvegarder les compteurs Firebase à partir des données réelles ?\n\nCela corrigera les erreurs de compteurs détectées par les tests.'))return;
+  if(!confirm('Recalculer et sauvegarder les compteurs à partir des données réelles ?\n\nCela corrigera les erreurs de compteurs détectées par les tests.'))return;
 
   /* Calculer les max IDs depuis chaque collection */
   const maxId=(arr)=>arr.reduce((m,x)=>{const n=parseInt(x.id);return(!isNaN(n)&&n>m)?n:m;},0);
@@ -4592,7 +4299,7 @@ async function repairCounters(){if(!_requireAdmin('repairCounters'))return;
   /* Forcer la sauvegarde (contournement du cache _lastSavedCounters) */
   _lastSavedCounters='';
   try{
-    await fbSaveCounters();
+    await sbSaveCounters();
     const lines=[
       `nxB : ${oldVals.nxB} → ${nxB}`,
       `nxU : ${oldVals.nxU} → ${nxU}`,
@@ -4642,7 +4349,7 @@ async function clearRegistrations(keepPending=true){if(!_requireAdmin('clearRegi
   rAdmRegistrations();
   let errors=0;
   for(const r of toClear){
-    try{await fbDel('registrations',r.id);}
+    try{await sbDel('registrations',r.id);}
     catch(e){errors++;console.error('[clearReg]',r.id,e.message);}
   }
   if(errors)_showSyncToast('⚠️ '+errors+' erreur(s) lors de la suppression');
@@ -4852,7 +4559,7 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
   if(!confirm(`Créer le compte de ${reg.prenom} ${reg.nom} ?\n\nRôle : ${role}\nCode de connexion : ${abbrev}\n\nLe membre utilisera ce code pour se connecter.`))return;
 
   /* 1. Compteur frais depuis Firebase pour éviter collisions entre sessions */
-  try{const d=await fbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
+  try{const d=await sbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
   const newId=_nextUserId();
   const neverExp=['resident','commission','admin'].includes(role);
   const nu={id:newId,abbrev,prenom:reg.prenom,nom:reg.nom,role,
@@ -4863,12 +4570,12 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
 
   try{
     /* 2. Réserver l'ID en sauvegardant le compteur EN PREMIER */
-    await fbSaveCounters();
+    await sbSaveCounters();
     /* 3. Sauvegarder l'utilisateur dans Firebase */
-    await fbSet('users',newId,nu);
+    await sbSet('users',newId,nu);
     /* 4. Mettre à jour la demande dans Firebase EN PREMIER */
     const processedAt=new Date().toISOString();
-    await fbUpd('registrations',id,{status:'approved',assignedRole:role,createdAbbrev:abbrev,createdUserId:newId,processedAt});
+    await sbUpd('registrations',id,{status:'approved',assignedRole:role,createdAbbrev:abbrev,createdUserId:newId,processedAt});
     /* 5. Seulement si TOUT réussit : mettre à jour l'état local */
     reg.status='approved';reg.assignedRole=role;reg.createdAbbrev=abbrev;reg.createdUserId=newId;reg.processedAt=processedAt;
     if(!users.find(u=>String(u.id)===String(newId)))users.push(nu);
@@ -4887,7 +4594,7 @@ async function rejectRegistration(id){if(!_requireAdmin('rejectRegistration'))re
   if(!confirm(`Rejeter la demande de ${reg.prenom} ${reg.nom} ?\n\nAucun compte ne sera créé.`))return;
   const processedAt=new Date().toISOString();
   try{
-    await fbUpd('registrations',id,{status:'rejected',processedAt});
+    await sbUpd('registrations',id,{status:'rejected',processedAt});
     /* Local seulement si Firebase réussit */
     reg.status='rejected';reg.processedAt=processedAt;
     rAdmRegistrations();
@@ -4904,7 +4611,7 @@ async function clearShelfHistory(){if(!_requireAdmin('clearShelfHistory'))return
   rAdmShelves();
   /* Supprimer de Firebase */
   for(const c of toDelete){
-    try{await fbDel('shelfChecks',c.id);}catch(e){console.warn('[clearShelfHistory]',c.id,e.message);}
+    try{await sbDel('shelfChecks',c.id);}catch(e){console.warn('[clearShelfHistory]',c.id,e.message);}
   }
   _showSyncToast('🗑️ Historique vidé');
 }
@@ -4932,8 +4639,8 @@ async function markShelfChecked(shelfKey){
   /* Mémoriser l'heure de cette vérification pour la prochaine */
   try{localStorage.setItem('last_shelf_check_'+shelfKey,now);}catch(e){}
   try{
-    await fbSet('shelfChecks',entry.id,entry);
-    await fbSaveCounters();
+    await sbSet('shelfChecks',entry.id,entry);
+    await sbSaveCounters();
     _showSyncToast('✅ Vérification enregistrée');
     rShelfMgrView();
     /* Rafraîchir le panneau admin si ouvert */
@@ -5208,7 +4915,7 @@ async function saveShelfAssign(){
   if(!u){errEl.textContent='Membre introuvable.';return;}
   u.assignedShelves=checked;
   try{
-    await fbUpd('users',u.id,{assignedShelves:checked});
+    await sbUpd('users',u.id,{assignedShelves:checked});
     cM('m-shelf-assign');
     rAdmShelves();
     _showSyncToast('✅ Étagères sauvegardées');
@@ -5221,91 +4928,7 @@ async function saveShelfAssign(){
 ═══════════════════════════════════════════════════════════════ */
 let _qRefreshTimer=null;
 
-function rQuotaPanel(){
-  const el=document.getElementById('quota-body');if(!el)return;
-  /* Limites plan Spark Firebase */
-  const LIMITS={r:50000,w:20000,d:20000};
-  const LABELS={r:'Lectures',w:'Écritures',d:'Suppressions'};
-  const ICONS={r:'👁️',w:'✏️',d:'🗑️'};
-
-  /* Charger tous les quotas des 7 derniers jours */
-  const today=new Date().toISOString().split('T')[0];
-  const days=[];
-  for(let i=0;i<7;i++){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const key=d.toISOString().split('T')[0];
-    let q={r:0,w:0,d:0};
-    try{const raw=localStorage.getItem('cb_quota_'+key+'_'+SPACE_ID);if(raw)q=JSON.parse(raw);}catch(e){}
-    days.push({date:key,label:i===0?'Aujourd\'hui':i===1?'Hier':key,q});
-  }
-  const todayQ=days[0].q;
-
-  /* ── KPIs principaux ── */
-  const kpiHtml=['r','w','d'].map(type=>{
-    const val=todayQ[type]||0;const lim=LIMITS[type];
-    const pct=Math.min(100,Math.round(val/lim*100));
-    const color=pct>=90?'#dc2626':pct>=70?'#d97706':'#16a34a';
-    const bgColor=pct>=90?'#fee2e2':pct>=70?'#fef3c7':'#dcfce7';
-    return `<div style="background:${bgColor};border-radius:12px;padding:16px 18px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-        <div>
-          <div style="font-size:12px;font-weight:500;color:${color};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${ICONS[type]} ${LABELS[type]}</div>
-          <div style="font-size:28px;font-weight:500;color:${color}">${val.toLocaleString('fr-FR')}</div>
-          <div style="font-size:12px;color:${color};opacity:.75">sur ${lim.toLocaleString('fr-FR')} autorisées</div>
-        </div>
-        <div style="font-size:22px;font-weight:700;color:${color}">${pct}%</div>
-      </div>
-      <div style="background:rgba(0,0,0,.08);border-radius:20px;height:8px;overflow:hidden">
-        <div style="width:${pct}%;height:100%;background:${color};border-radius:20px;transition:width .5s"></div>
-      </div>
-      <div style="font-size:11px;color:${color};opacity:.7;margin-top:6px">${(lim-val).toLocaleString('fr-FR')} restantes</div>
-    </div>`;
-  }).join('');
-
-  /* ── Prévision ── */
-  const now=new Date();const hoursElapsed=now.getHours()+(now.getMinutes()/60)||0.1;
-  const rPerHour=Math.round((todayQ.r||0)/hoursElapsed);
-  const rProjected=Math.round(rPerHour*24);
-  const projColor=rProjected>LIMITS.r?'#dc2626':rProjected>LIMITS.r*0.7?'#d97706':'#16a34a';
-  const prevHtml=`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:14px 16px;margin-top:10px">
-    <div style="font-size:13px;font-weight:500;color:var(--navy);margin-bottom:10px">📈 Prévision journalière</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-      <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:var(--g600)">${rPerHour.toLocaleString('fr-FR')}</div><div style="font-size:11px;color:var(--g400)">Lectures/heure actuel</div></div>
-      <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:${projColor}">${rProjected.toLocaleString('fr-FR')}</div><div style="font-size:11px;color:var(--g400)">Projetées sur 24h</div></div>
-      <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:var(--g600)">${Math.ceil((LIMITS.r-(todayQ.r||0))/Math.max(1,rPerHour))}h</div><div style="font-size:11px;color:var(--g400)">Avant épuisement</div></div>
-    </div>
-    ${rProjected>LIMITS.r?'<div style="margin-top:10px;padding:8px 12px;background:#fee2e2;border-radius:8px;font-size:12px;color:#991b1b">⚠️ Quota journalier dépassé à ce rythme. Le cache localStorage réduit les lectures à chaque redémarrage.</div>':''}
-  </div>`;
-
-  /* ── Historique 7 jours ── */
-  const histHtml=`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:14px 16px;margin-top:10px">
-    <div style="font-size:13px;font-weight:500;color:var(--navy);margin-bottom:12px">📅 Historique — 7 derniers jours</div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="border-bottom:1px solid var(--g100)">${['Date','Lectures','Écritures','Suppressions'].map(h=>`<th style="padding:6px 10px;text-align:left;color:var(--g400);font-weight:500">${h}</th>`).join('')}</tr></thead>
-      <tbody>${days.map((d,i)=>{const r=d.q.r||0,w=d.q.w||0,del=d.q.d||0;
-        return `<tr style="border-bottom:0.5px solid var(--g100);${i===0?'background:#f0fdf4':''}">`+
-          `<td style="padding:7px 10px;font-weight:${i===0?600:400}">${d.label}</td>`+
-          `<td style="padding:7px 10px;color:${r>LIMITS.r*0.9?'#dc2626':r>LIMITS.r*0.7?'#d97706':'inherit'}">${r.toLocaleString('fr-FR')}</td>`+
-          `<td style="padding:7px 10px">${w.toLocaleString('fr-FR')}</td>`+
-          `<td style="padding:7px 10px">${del.toLocaleString('fr-FR')}</td></tr>`;
-      }).join('')}</tbody>
-    </table></div>
-  </div>`;
-
-  /* ── Info architecture ── */
-  const infoHtml=`<div style="background:#eff6ff;border-radius:10px;padding:12px 16px;margin-top:10px;font-size:13px;color:#1e40af;line-height:1.6">
-    ⚡ <strong>Architecture économe activée</strong> — 1 listener onSnapshot (au lieu de 7) + cache localStorage.<br>
-    Démarrage depuis le cache : <strong>0 lecture Firebase</strong>. Seuls les changements réels consomment du quota.
-  </div>`;
-
-  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:4px">${kpiHtml}</div>${prevHtml}${histHtml}${infoHtml}`;
-
-  /* Auto-refresh toutes les 10s quand le panneau est ouvert */
-  clearTimeout(_qRefreshTimer);
-  if(document.getElementById('ap-quota')?.classList.contains('active')){
-    _qRefreshTimer=setTimeout(()=>rQuotaPanel(),10000);
-  }
-}
+function rQuotaPanel(){/* Supprimé — panel Firebase quota n'existe plus */}
 
 /* ═══════════════════════════════════════════════════════════════
    ADMIN — EMPRUNTS (onglet admin)
@@ -5480,7 +5103,7 @@ async function doImport(){
   try{
     if(clr){
       /* Supprimer tous les livres existants dans Firebase */
-      await fbBatchDel('books',books.map(b=>String(b.id)));
+      await sbBatchDel('books',books.map(b=>String(b.id)));
       books=[];nxB=1;
     }
     /* Insérer par lots de 500 (limite Firestore) */
@@ -5493,12 +5116,12 @@ async function doImport(){
     /* Écriture REST par lots de 400 */
     for(let i=0;i<newBooks.length;i+=400){
       const chunk=newBooks.slice(i,i+400);
-      await fbBatchSet('books',chunk);
+      await sbBatchSet('books',chunk);
       added+=chunk.length;
       showLoading(`Import… ${added}/${newBooks.length} livres`);
     }
     books.push(...newBooks);
-    await fbSaveCounters();
+    await sbSaveCounters();
     hideLoading();
     document.getElementById('imp-prv').style.display='none';document.getElementById('imp-res').style.display='block';
     document.getElementById('imp-msg').textContent=`${added} livre(s) importé(s).${clr?' Ancienne base remplacée.':' Ajoutés.'} Total : ${books.length} livres.`;
@@ -5530,30 +5153,16 @@ async function saHash(pwd){
 }
 
 async function saGetStoredHash(){
-  /* Lire depuis _spaces/__superadmin__ (même collection que les espaces) */
-  /* En cas d'erreur réseau ou Firebase → fallback sur le hash par défaut */
+  /* Lire depuis super_admin_config (Supabase) — fallback sur hash par défaut si absent */
   try{
-    const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{headers:fbH()});
-    console.log('[SA] Lecture __superadmin__ → HTTP',r.status);
-    if(r.status===404){
-      /* Document pas encore créé → mot de passe par défaut */
-      console.log('[SA] Document absent → utilisation du hash par défaut');
-      return{hash:SA_DEFAULT_HASH,isDefault:true,status:404};
-    }
-    if(r.ok){
-      const d=await r.json();
-      const doc=fromFsDoc(d);
-      console.log('[SA] Document lu, pwdHash présent ?', !!(doc&&doc.pwdHash));
-      if(doc&&doc.pwdHash)return{hash:doc.pwdHash,isDefault:false,status:200};
-    } else {
-      const errBody=await r.json().catch(()=>({}));
-      console.warn('[SA] Firebase erreur',r.status,errBody?.error?.message||'');
-      /* 403 ou autre erreur → fallback défaut plutôt que bloquer */
-    }
+    _initSb();
+    const {data,error}=await sb.from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
+    if(error){console.warn('[SA] Supabase erreur:',error.message);}
+    else if(data&&data.pwdHash)return{hash:data.pwdHash,isDefault:false,status:200};
+    else{console.log('[SA] super_admin_config absent → hash par défaut');return{hash:SA_DEFAULT_HASH,isDefault:true,status:404};}
   }catch(e){
     console.warn('[SA] saGetStoredHash réseau:',e.message);
   }
-  /* Toujours retourner le hash par défaut en cas de problème */
   return{hash:SA_DEFAULT_HASH,isDefault:true,status:0};
 }
 
@@ -5584,8 +5193,6 @@ async function saLogin(){
   if(diagEl)diagEl.style.display='none';
   if(btn)btn.disabled=true;
   try{
-    /* Logs de diagnostic */
-    console.log('[SA] Token Firebase présent :', !!fbToken, fbToken?fbToken.substring(0,12)+'...':'NULL');
     const hashHex=await saHash(pwd);
     console.log('[SA] Hash du mot de passe saisi :', hashHex.substring(0,16)+'...');
     console.log('[SA] Hash par défaut Admin2025  :', SA_DEFAULT_HASH.substring(0,16)+'...');
@@ -5623,25 +5230,16 @@ async function saDiagnose(){
   diagEl.style.display='block';
   diagEl.innerHTML='⏳ Diagnostic en cours…';
   try{
-    const tokenOk=!!fbToken;
-    const tokenStr=fbToken?fbToken.substring(0,16)+'...':'❌ NULL';
+    _initSb();
     const hashAdmin=await saHash('Admin2025');
-    const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{headers:fbH()});
-    let firebaseStatus=r.status;
-    let firebaseMsg='';
-    let storedHashStr='(non lu)';
-    if(r.ok){
-      const d=await r.json();const doc=fromFsDoc(d);
-      storedHashStr=doc.pwdHash?doc.pwdHash.substring(0,16)+'...':'(champ absent)';
-    } else {
-      const e=await r.json().catch(()=>({}));
-      firebaseMsg=e?.error?.message||'';
-    }
+    const {data,error}=await sb.from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
+    const storedHashStr=data?.pwdHash?data.pwdHash.substring(0,16)+'...':'(champ absent)';
+    const sbStatus=error?('❌ '+error.message):'✅ OK';
     diagEl.innerHTML=`<strong>🔍 Diagnostic super-admin</strong><br>
-      Token Firebase : ${tokenOk?'✅ OK':'❌ ABSENT'} <code>${tokenStr}</code><br>
-      HTTP /_spaces/__superadmin__ : <strong>${firebaseStatus}</strong>${firebaseMsg?' — '+firebaseMsg:''}<br>
+      Supabase client : ✅ prêt<br>
+      super_admin_config : <strong>${sbStatus}</strong><br>
       Hash Admin2025 : <code>${hashAdmin.substring(0,16)}…</code><br>
-      Hash stocké FB : <code>${storedHashStr}</code><br>
+      Hash stocké SB : <code>${storedHashStr}</code><br>
       Hash par défaut : <code>${SA_DEFAULT_HASH.substring(0,16)}…</code><br>
       <span style="color:${hashAdmin===SA_DEFAULT_HASH?'#4ade80':'#f87171'}">${hashAdmin===SA_DEFAULT_HASH?'✅ Hash Admin2025 = hash par défaut':'❌ MISMATCH hash!'}</span>`;
   }catch(e){
@@ -5653,7 +5251,7 @@ async function saLoadSpaces(){
   const listEl=document.getElementById('sa-spaces-list');
   if(listEl)listEl.innerHTML='<div style="text-align:center;padding:40px;color:rgba(255,255,255,.3)">⏳ Chargement…</div>';
   try{
-    const spaces=(await fbGetAllRoot('_spaces')).filter(s=>s.code&&s.code!=='__superadmin__');
+    const spaces=(await sbGetAllRoot('_spaces')).filter(s=>s.code&&s.code!=='__superadmin__');
     const countEl=document.getElementById('sa-spaces-count');
     const count2El=document.getElementById('sa-spaces-count2');
     const statTotal=document.getElementById('sa-stat-total');
@@ -5722,7 +5320,7 @@ async function saCreateSpace(){
   btn.disabled=true;btn.textContent='⏳ Vérification…';
   try{
     /* Vérifier unicité */
-    const existing=await fbGetDocRoot('_spaces',code);
+    const existing=await sbGetDocRoot('_spaces',code);
     if(existing&&existing.code){errEl.textContent='Ce code est déjà utilisé par une autre bibliothèque.';return;}
     btn.textContent='⏳ Création en cours…';
     const spaceData={code,name,short,tagline:tag||name,color,active:true,createdAt:new Date().toISOString()};
@@ -5733,15 +5331,15 @@ async function saCreateSpace(){
       role:'admin',canPropose:true,propUntil:null,disabled:false,photoB64:null,profession:'',whatsapp:'',commune:''};
     const initCounters={nxB:1,nxU:2,nxR:1,nxS:1,nxL:1};
     /* 1. Créer _spaces/{code} */
-    await fbSetRoot('_spaces',code,spaceData);
-    /* 2. Initialiser les sous-collections via batchWrite */
-    const writes=[
-      {update:{name:`projects/${FB_PROJECT}/databases/(default)/documents/spaces/${code}/users/1`,fields:toFsFields(initAdmin)}},
-      {update:{name:`projects/${FB_PROJECT}/databases/(default)/documents/spaces/${code}/config/main`,fields:toFsFields(initCfg)}},
-      {update:{name:`projects/${FB_PROJECT}/databases/(default)/documents/spaces/${code}/counters/main`,fields:toFsFields(initCounters)}},
-    ];
-    const bwR=await fetch(BATCH_URL,{method:'POST',headers:fbH(),body:JSON.stringify({writes})});
-    if(!bwR.ok){const e=await bwR.json();throw new Error(e.error?.message||'Échec initialisation collections');}
+    await sbSetRoot('_spaces',code,spaceData);
+    /* 2. Initialiser les tables liées à l'espace */
+    _initSb();
+    const {error:cfgErr}=await sb.from('space_config').upsert({space_code:code,...initCfg});
+    if(cfgErr)throw new Error('Config: '+cfgErr.message);
+    const {error:cntErr}=await sb.from('space_counters').upsert({space_code:code,...initCounters});
+    if(cntErr)throw new Error('Counters: '+cntErr.message);
+    const {error:usrErr}=await sb.from('users').upsert({...initAdmin,space_code:code,neverExpires:true,createdAt:new Date().toISOString()});
+    if(usrErr)throw new Error('Admin: '+usrErr.message);
     /* Succès */
     const url=`${window.location.origin}/${code}`;
     sucEl.innerHTML=`✅ <strong>Bibliothèque "${name}" créée avec succès !</strong><br>
@@ -5766,30 +5364,26 @@ async function saChangePwd(){
   errEl.textContent='';
   if(!newPwd||newPwd.length<6){errEl.textContent='Mot de passe trop court (min. 6 caractères).';return;}
   if(newPwd!==confPwd){errEl.textContent='Les mots de passe ne correspondent pas.';return;}
-  btn.disabled=true;errEl.textContent='Enregistrement dans Firebase…';
+  btn.disabled=true;errEl.textContent='Enregistrement…';
   try{
     const hashHex=await saHash(newPwd);
-    /* Écrire dans _spaces/__superadmin__ — même collection accessible */
-    await fbSetRoot('_spaces','__superadmin__',{pwdHash:hashHex,updatedAt:new Date().toISOString()});
+    await sbSetRoot('_spaces','__superadmin__',{pwdHash:hashHex,updatedAt:new Date().toISOString()});
     document.getElementById('sa-new-pwd').value='';
     document.getElementById('sa-confirm-pwd').value='';
     const warn=document.getElementById('sa-default-pwd-warn');
     if(warn)warn.style.display='none';
     cM('m-sa-changepwd');
-    alert('✅ Mot de passe mis à jour dans Firebase !\nValable sur tous les navigateurs et appareils.');
-  }catch(e){errEl.textContent='Erreur Firebase : '+e.message;console.error(e);}
+    alert('✅ Mot de passe mis à jour !\nValable sur tous les navigateurs et appareils.');
+  }catch(e){errEl.textContent='Erreur : '+e.message;console.error(e);}
   finally{btn.disabled=false;}
 }
 
 async function saToggleSpace(code,currentActive){
   if(!confirm(currentActive?`Désactiver "${code}" ? Les membres ne pourront plus se connecter.`:`Réactiver "${code}" ?`))return;
   try{
-    const mask='updateMask.fieldPaths=active';
-    const r=await fetch(`${FS_ROOT}/_spaces/${code}?${mask}`,{
-      method:'PATCH',headers:fbH(),
-      body:JSON.stringify({fields:{active:{booleanValue:!currentActive}}})
-    });
-    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    _initSb();
+    const {error}=await sb.from('spaces').update({active:!currentActive}).eq('code',code);
+    if(error)throw new Error(error.message);
     saLoadSpaces();
   }catch(e){alert('Erreur : '+e.message);}
 }
@@ -5894,13 +5488,9 @@ async function saveThemeColor(){
   if(btn)btn.disabled=true;
   if(msg)msg.textContent='Sauvegarde en cours…';
   try{
-    /* Mettre à jour dans _spaces/{code} */
-    const mask='updateMask.fieldPaths=color';
-    const r=await fetch(`${FS_ROOT}/_spaces/${SPACE_ID}?${mask}`,{
-      method:'PATCH',headers:fbH(),
-      body:JSON.stringify({fields:{color:{stringValue:color}}})
-    });
-    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    _initSb();
+    const {error}=await sb.from('spaces').update({color}).eq('code',SPACE_ID);
+    if(error)throw new Error(error.message);
     /* Mettre à jour SPACE en mémoire */
     if(SPACE)SPACE.color=color;
     applyColorVars(color);
@@ -6062,7 +5652,7 @@ async function confirmLoan(){
     const loan={id:loanId,bookId:_loanBookId,bookTitle:b.titre,
       userId:curUser.id,userAbbrev:curUser.abbrev,userName:curUser.prenom+' '+curUser.nom,
       requestedAt:now,approvedAt:isResidentLoan?now:null,status:loanStatus,dueDate,returnedAt:null};
-    await fbSet('loans',loanId,loan);
+    await sbSet('loans',loanId,loan);
     loans.push(loan);
     if(isResidentLoan){
       /* Résident : livre marqué emprunté ou toujours disponible selon nb exemplaires restants */
@@ -6070,7 +5660,7 @@ async function confirmLoan(){
       const copies=parseInt(b.exemplaires)||1;
       const newStatus=activeLoansForBook+1>=copies?'borrowed':'available';
       b.status=newStatus;b.borrowedBy=curUser.prenom+' '+curUser.nom;b.borrowedUntil=dueDate;
-      await fbUpd('books',_loanBookId,{status:newStatus,borrowedBy:b.borrowedBy,borrowedUntil:dueDate,activeLoans:activeLoansForBook+1});
+      await sbUpd('books',_loanBookId,{status:newStatus,borrowedBy:b.borrowedBy,borrowedUntil:dueDate,activeLoans:activeLoansForBook+1});
     }
     cM('m-loan');
     rCat();
@@ -6085,7 +5675,7 @@ async function deleteLoanHistory(loanId){
   if(!l)return;
   if(!confirm('Supprimer définitivement cet historique d\'emprunt ?\n"'+l.bookTitle+'" — '+l.userName+'\nCette action libère de l\'espace Firebase et est irréversible.'))return;
   try{
-    await fbDel('loans',loanId);
+    await sbDel('loans',loanId);
     const idx=loans.findIndex(x=>x.id==loanId);if(idx!==-1)loans.splice(idx,1);
     rLoans('active');rAdmLoans();updAdmLoansBadge();
   }catch(e){alert('Erreur : '+e.message);}
@@ -6097,7 +5687,7 @@ async function bulkDeleteLoanHistory(){
   if(!confirm('Supprimer définitivement tout l\'historique terminé ?\n\n'+finalLoans.length+' enregistrement(s) concerné(s) (Retournés + Rejetés).\n\n⚠️ Action irréversible — les emprunts actifs et en attente ne sont PAS touchés.'))return;
   let deleted=0,errors=0;
   for(const l of finalLoans){
-    try{await fbDel('loans',l.id);deleted++;}
+    try{await sbDel('loans',l.id);deleted++;}
     catch(e){errors++;console.warn('[purge]',l.id,e.message);}
   }
   rLoans('active');rAdmLoans();updAdmLoansBadge();
@@ -6110,7 +5700,7 @@ async function markReturned(loanId){
   if(!confirm('Déclarer "'+l.bookTitle+'" comme retourné ?\nUn administrateur devra valider le retour avant votre prochain emprunt.'))return;
   try{
     const now=new Date().toISOString();
-    await fbUpd('loans',loanId,{status:'pending_return',returnedAt:now});
+    await sbUpd('loans',loanId,{status:'pending_return',returnedAt:now});
     l.status='pending_return';l.returnedAt=now;
     /* Le livre reste "borrowed" jusqu\'à validation admin */
     rLoans('active');rCat();updAdmLoansBadge();
@@ -6146,8 +5736,8 @@ async function approveLoan(loanId){
     l.status='active';l.approvedAt=now;l.approvedBy=curUser?.abbrev||'?';
     b.status=newStatus;
     if(newStatus==='borrowed'){b.borrowedBy=l.userName;b.borrowedUntil=l.dueDate;}
-    await fbUpd('loans',loanId,{status:'active',approvedAt:now,approvedBy:curUser?.abbrev||'?'});
-    await fbUpd('books',l.bookId,{
+    await sbUpd('loans',loanId,{status:'active',approvedAt:now,approvedBy:curUser?.abbrev||'?'});
+    await sbUpd('books',l.bookId,{
       status:newStatus,
       borrowedBy:newStatus==='borrowed'?l.userName:null,
       borrowedUntil:newStatus==='borrowed'?l.dueDate:null,
@@ -6163,7 +5753,7 @@ async function rejectLoan(loanId){
   if(!confirm('Rejeter la demande d\'emprunt de "'+l.bookTitle+'" par '+l.userName+' ?'))return;
   try{
     const now=new Date().toISOString();
-    await fbUpd('loans',loanId,{status:'rejected',rejectedAt:now,rejectedBy:curUser?.abbrev||'?'});
+    await sbUpd('loans',loanId,{status:'rejected',rejectedAt:now,rejectedBy:curUser?.abbrev||'?'});
     /* Mise à jour locale */
     l.status='rejected';l.rejectedAt=now;l.rejectedBy=curUser?.abbrev||'?';
     /* Purger l'historique du membre : garder seulement les 5 derniers emprunts terminés (returned/rejected) */
@@ -6173,7 +5763,7 @@ async function rejectLoan(loanId){
     if(memberHistoric.length>5){
       const toDelete=memberHistoric.slice(5);
       for(const old of toDelete){
-        try{await fbDel('loans',old.id);}catch(e){console.warn('[purge]',e.message);}
+        try{await sbDel('loans',old.id);}catch(e){console.warn('[purge]',e.message);}
       }
     }
     rLoans('active');rAdmLoans();updAdmLoansBadge();
@@ -6187,7 +5777,7 @@ async function validateReturn(loanId){
   if(!confirm('Valider le retour de "'+l.bookTitle+'" ?'))return;
   try{
     const now=new Date().toISOString();
-    await fbUpd('loans',loanId,{status:'returned',validatedAt:now,validatedBy:curUser?.abbrev||'?'});
+    await sbUpd('loans',loanId,{status:'returned',validatedAt:now,validatedBy:curUser?.abbrev||'?'});
     l.status='returned';l.validatedAt=now;l.validatedBy=curUser?.abbrev||'?';
     const b=books.find(x=>x.id==l.bookId);
     if(b){
@@ -6195,7 +5785,7 @@ async function validateReturn(loanId){
       b.status='available';
       const upd={status:'available',activeLoans:stillActive};
       if(stillActive===0){b.borrowedBy=null;b.borrowedUntil=null;upd.borrowedBy=null;upd.borrowedUntil=null;}
-      await fbUpd('books',l.bookId,upd);
+      await sbUpd('books',l.bookId,upd);
     }
     rLoans('active');rAdmLoans();rCat();updAdmLoansBadge();
     /* Purger l'historique du membre : garder seulement les 5 derniers emprunts terminés */
@@ -6205,7 +5795,7 @@ async function validateReturn(loanId){
     if(memberHistoric.length>=5){
       const toDelete=memberHistoric.slice(4);
       for(const old of toDelete){
-        try{await fbDel('loans',old.id);}catch(e){console.warn('[purge history]',e.message);}
+        try{await sbDel('loans',old.id);}catch(e){console.warn('[purge history]',e.message);}
       }
     }
   }catch(e){alert('Erreur : '+e.message);}
@@ -6216,7 +5806,7 @@ async function rejectReturn(loanId){
   if(!l)return;
   if(!confirm('Rejeter le retour de "'+l.bookTitle+'" ? L\'emprunt repassera en statut actif.'))return;
   try{
-    await fbUpd('loans',loanId,{status:'active',returnedAt:null});
+    await sbUpd('loans',loanId,{status:'active',returnedAt:null});
     l.status='active';l.returnedAt=null;
     rLoans('active');rAdmLoans();updAdmLoansBadge();
   }catch(e){alert('Erreur : '+e.message);}
