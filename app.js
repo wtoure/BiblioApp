@@ -1202,6 +1202,11 @@ async function doLogin(){
       localStorage.setItem('cb_session',JSON.stringify(sessionPayload));
     /* Charger les données puis naviguer */
     await loadRestData();
+    /* Garantir que l'utilisateur connecté est dans le tableau local (cache peut être obsolète) */
+    if(!users.find(x=>String(x.id)===String(curUser.id))){
+      users.push(curUser);
+      _cachePut({users});
+    }
     try{
       if(u.role==='admin'){resetAdmTabs();showAdm();}else showCat();
     }catch(navErr){console.error('Nav:',navErr);try{sv('vc');sChip('a0','n0');}catch(_){}}
@@ -2939,17 +2944,17 @@ function showCard(id){
   document.getElementById('m-card-body').innerHTML=html`
     <div style="background:linear-gradient(135deg,#1C4370 0%,#22806B 100%);border-radius:16px;padding:28px;color:white;font-family:'DM Sans',sans-serif">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px;opacity:.8;font-size:13px;font-weight:600;letter-spacing:.5px">
-        ${logoHtml}
+        ${safe(logoHtml)}
         <span style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:700">Bibliothèque · Centre Culturel Comoé</span>
       </div>
       <div style="display:flex;gap:24px;align-items:center">
-        ${photoHtml}
+        ${safe(photoHtml)}
         <div style="flex:1">
           <div style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;line-height:1.2;margin-bottom:4px">${u.prenom} ${u.nom.toUpperCase()}</div>
           <div style="margin-bottom:12px">${safe(rBdg(u.role))}</div>
-          ${u.profession?`<div style="font-size:13px;opacity:.85;margin-bottom:4px">💼 ${u.profession}</div>`:''}
-          ${u.commune?`<div style="font-size:13px;opacity:.85;margin-bottom:4px">📍 ${u.commune}</div>`:''}
-          ${u.whatsapp?`<div style="font-size:13px;opacity:.85">📱 ${u.whatsapp}</div>`:''}
+          ${safe(u.profession?`<div style="font-size:13px;opacity:.85;margin-bottom:4px">💼 ${esc(u.profession)}</div>`:'')}
+          ${safe(u.commune?`<div style="font-size:13px;opacity:.85;margin-bottom:4px">📍 ${esc(u.commune)}</div>`:'')}
+          ${safe(u.whatsapp?`<div style="font-size:13px;opacity:.85">📱 ${esc(u.whatsapp)}</div>`:'')}
         </div>
       </div>
       <div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.2);display:flex;justify-content:space-between;font-size:11px;opacity:.6">
