@@ -1226,7 +1226,7 @@ async function doLogin(){
   }
 }
 document.getElementById('li').addEventListener('keypress',e=>{if(e.key==='Enter')doLogin();});
-function doLogout(){stopRealtimeSync();curUser=null;localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
+function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
 function showAdm(){
   if(!curUser)return;
   const isAdmin=curUser.role==='admin';
@@ -2637,6 +2637,7 @@ async function updN(id,v){
 ═══════════════════════════════════════════════════════════════ */
 function countAdmins(){return users.filter(u=>u.role==='admin').length;}
 let admUsFilter='all';
+let _admUsRefreshed=false; /* true après le premier fetch Supabase depuis cette session */
 function setAdmUsFilter(f){
   admUsFilter=f;
   ['all','active','expired','disabled'].forEach(k=>{
@@ -2650,6 +2651,12 @@ function setAdmUsFilter(f){
 }
 function rAdmUs(){
   const tb=document.getElementById('utb');if(!tb)return;
+  /* Refresh silencieux au premier affichage : rattrape les users créés hors-app (ex: Supabase UI)
+     qui ne seraient pas dans le cache localStorage. Après ce fetch, le Realtime prend le relais. */
+  if(!_admUsRefreshed&&dataReady){
+    _admUsRefreshed=true;
+    _fetchAndCache('users',null).then(()=>rAdmUs()).catch(()=>{});
+  }
   const gO=cfg.openAll&&(!cfg.openUntil||new Date()<=new Date(cfg.openUntil+'T23:59:59'));
   const today3=new Date().toISOString().split('T')[0];
   /* Appliquer le filtre statut */
