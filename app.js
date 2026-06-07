@@ -1107,7 +1107,7 @@ function bNav(cid,av){
   const tabs=curUser.tabs||[];
   const hasTab=k=>r==='admin'||tabs.includes(k);
   /* L'admin voit toujours les deux catalogues */
-  if(r==='admin')curUser.canSeeSpiritual=true;
+  if(r==='admin')curUser.spiritualAccess=true;
   let h=`<button type="button" class="nl${av==='vc'?' active':''}" onclick="showCat()">&#128218; Catalogue</button>`;
   if(r==='commission'||r==='admin'||r==='resident')
     h+=`<button type="button" class="nl${av==='vcom'?' active':''}" onclick="showCom()">${r==='resident'?'&#128065;&#65039; Consultation':'&#128203; Gestion des demandes'}</button>`;
@@ -1332,7 +1332,7 @@ function showCat(){
     _btnML.style.display=(curUser&&(curUser.role==='resident'||curUser.canLoan||hasLoans))?'inline-flex':'none';
   }
   /* Garantir que l'admin voit toujours les deux catalogues */
-  if(curUser&&curUser.role==='admin')curUser.canSeeSpiritual=true;
+  if(curUser&&curUser.role==='admin')curUser.spiritualAccess=true;
   if(!curUser){sv('vl');return;}
   sf={t:'',a:'',c:'',l:''};
   ['ft','fa','fc','fl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -1372,8 +1372,8 @@ function gFilt(){
     if(b.status==='retired')return false;
     const bType=b.catType||'academique';
     /* Accès individuel spirituel override */
-    if(bType==='spirituel'&&!isAdmin&&curUser&&!allowedCats.includes('spirituel')&&!curUser.canSeeSpiritual)return false;
-    if(bType==='spirituel'&&(isAdmin||allowedCats.includes('spirituel')||curUser?.canSeeSpiritual)){}
+    if(bType==='spirituel'&&!isAdmin&&curUser&&!allowedCats.includes('spirituel')&&!curUser.spiritualAccess)return false;
+    if(bType==='spirituel'&&(isAdmin||allowedCats.includes('spirituel')||curUser?.spiritualAccess)){}
     else if(!allowedCats.includes(bType))return false;
     if(catTypeFilter&&catTypeFilter!=='all'&&bType!==catTypeFilter)return false;
     return true;
@@ -2312,7 +2312,7 @@ function bkRows(src,list=null){
     const newBadge=isNew?'<span style="background:#d1fae5;color:#065f46;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;margin-left:4px">🆕</span>':'';
     const featBadge=b.featured?'<span style="font-size:12px;margin-left:3px">⭐</span>':'';
     const activeForBook=loans.filter(l=>l.bookId==b.id&&(l.status==='active'||l.status==='pending_return')).length;
-    const copies=parseInt(b.exemplaires)||1;
+    const copies=parseInt(b.expl)||parseInt(b.exemplaires)||1;
     const availCopies=Math.max(0,copies-activeForBook);
     const copiesBadge=src==='adm'?`<td style="text-align:center;font-size:13px;font-weight:600;color:${availCopies===0?'#dc2626':availCopies===1?'#d97706':'#065f46'}">${availCopies}/${copies}</td>`:'';
     const borrowed=b.status==='borrowed'||availCopies===0;
@@ -2373,7 +2373,7 @@ async function togBkStatus(id,src){
     if(!confirm(`Marquer "${b.titre}" comme retrouvé et le remettre disponible ?`))return;
     const prevSt=b.status;
     b.status='available';b.missingAt=null;b.missingNote=null;
-    try{await sbUpd('books',id,{status:'available',missingAt:null,missingNote:null,lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    try{await sbUpd('books',id,{status:'available',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
     _logBookChange(id,b.titre,{status:{from:prevSt,to:'available'}});
   }else{
     const nxt=b.status==='retired'?'available':'retired';
@@ -2391,14 +2391,14 @@ async function reportMissing(id){
   if(b.status==='missing'){
     if(!confirm(`"${b.titre}" est déjà signalé introuvable.\nCliquez OK pour le marquer comme retrouvé.`))return;
     b.status='available';b.missingAt=null;b.missingNote=null;
-    try{await sbUpd('books',id,{status:'available',missingAt:null,missingNote:null});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    try{await sbUpd('books',id,{status:'available'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
     cM('mdet');rCat();rAdmBk();_showSyncToast('✅ Livre retrouvé — remis disponible');return;
   }
   const note=prompt(`Signaler "${b.titre}" comme introuvable à son emplacement.\n\nNote optionnelle (ex : vérifié le ${new Date().toLocaleDateString('fr-FR')}, absent de l'étagère) :`,'');
   if(note===null)return;
   const now=new Date().toISOString();
   b.status='missing';b.missingAt=now;b.missingNote=note||'';
-  try{await sbUpd('books',id,{status:'missing',missingAt:now,missingNote:note||'',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+  try{await sbUpd('books',id,{status:'missing',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
   _logBookChange(id,b.titre,{status:{from:'available',to:'missing'},note:note||''});
   cM('mdet');rCat();rAdmBk();_showSyncToast('⚠️ Livre signalé introuvable');
 }
@@ -3378,8 +3378,8 @@ function rCatAccessPanel(){
       <td>${safe(rBdg(u.role))}</td>
       <td style="text-align:center">
         <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
-          ${u.canSeeSpiritual?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>':'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>'}
-          <label class="tgl"><input type="checkbox" ${u.canSeeSpiritual?'checked':''} onchange="toggleIndivSpiritual(${u.id},this.checked)"/><span class="ts"></span></label>
+          ${u.spiritualAccess?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>':'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>'}
+          <label class="tgl"><input type="checkbox" ${u.spiritualAccess?'checked':''} onchange="toggleIndivSpiritual(${u.id},this.checked)"/><span class="ts"></span></label>
         </div>
       </td>
     </tr>`).join(''):`<tr><td colspan="3" style="text-align:center;padding:24px;color:var(--g400)">Aucun membre trouvé</td></tr>`;
@@ -3397,9 +3397,9 @@ function rCatAccessPanel(){
 }
 async function toggleIndivSpiritual(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
-  u.canSeeSpiritual=v;
+  u.spiritualAccess=v;
   rCatAccessPanel();
-  try{await sbUpd('users',id,{canSeeSpiritual:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{spiritualAccess:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 async function toggleCatAccess(role,type,v){
   if(!cfg.catAccess)cfg.catAccess={member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
@@ -3505,8 +3505,8 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
       action:'Corriger à 1 exemplaire',
       fix:async()=>{
         for(const b of zeroExpl){
-          b.exemplaires=1;
-          await sbUpd('books',b.id,{exemplaires:1}).catch(()=>{});
+          b.expl=1;
+          await sbUpd('books',b.id,{expl:1}).catch(()=>{});
         }
       }
     });
@@ -3640,7 +3640,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
         if(!confirm('Remettre ces '+allMissing.length+' livre(s) en "Disponible" ?\nN\'utilisez cette correction que si les livres ont effectivement été retrouvés.'))return;
         for(const b of allMissing){
           b.status='available';b.missingAt=null;b.missingNote=null;
-          await sbUpd('books',b.id,{status:'available',missingAt:null,missingNote:null}).catch(()=>{});
+          await sbUpd('books',b.id,{status:'available'}).catch(()=>{});
         }
       }
     });
@@ -5660,7 +5660,7 @@ async function confirmLoan(){
     if(isResidentLoan){
       /* Résident : livre marqué emprunté ou toujours disponible selon nb exemplaires restants */
       const activeLoansForBook=loans.filter(x=>x.bookId==_loanBookId&&(x.status==='active'||x.status==='pending_return')&&x.id!==loanId).length;
-      const copies=parseInt(b.exemplaires)||1;
+      const copies=parseInt(b.expl)||parseInt(b.exemplaires)||1;
       const newStatus=activeLoansForBook+1>=copies?'borrowed':'available';
       b.status=newStatus;b.borrowedBy=curUser.prenom+' '+curUser.nom;b.borrowedUntil=dueDate;
       await sbUpd('books',_loanBookId,{status:newStatus,borrowedBy:b.borrowedBy,borrowedUntil:dueDate,activeLoans:activeLoansForBook+1});
@@ -5739,7 +5739,7 @@ async function approveLoan(loanId){
     l.status='active';l.approvedAt=now;l.approvedBy=curUser?.abbrev||'?';
     b.status=newStatus;
     if(newStatus==='borrowed'){b.borrowedBy=l.userName;b.borrowedUntil=l.dueDate;}
-    await sbUpd('loans',loanId,{status:'active',approvedAt:now,approvedBy:curUser?.abbrev||'?'});
+    await sbUpd('loans',loanId,{status:'active',approvedAt:now,validatedBy:curUser?.abbrev||'?'});
     await sbUpd('books',l.bookId,{
       status:newStatus,
       borrowedBy:newStatus==='borrowed'?l.userName:null,
@@ -5756,7 +5756,7 @@ async function rejectLoan(loanId){
   if(!confirm('Rejeter la demande d\'emprunt de "'+l.bookTitle+'" par '+l.userName+' ?'))return;
   try{
     const now=new Date().toISOString();
-    await sbUpd('loans',loanId,{status:'rejected',rejectedAt:now,rejectedBy:curUser?.abbrev||'?'});
+    await sbUpd('loans',loanId,{status:'rejected'});
     /* Mise à jour locale */
     l.status='rejected';l.rejectedAt=now;l.rejectedBy=curUser?.abbrev||'?';
     /* Purger l'historique du membre : garder seulement les 5 derniers emprunts terminés (returned/rejected) */
