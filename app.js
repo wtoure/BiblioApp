@@ -577,7 +577,7 @@ async function loadAllData(){
           await loadRestData();
           hideLoading();
           try{
-            const tabs=curUser.adminTabs||[];
+            const tabs=curUser.tabs||[];
             const lastView=localStorage.getItem('cb_lastview');
             const lastTab=localStorage.getItem('cb_lasttab');
             /* Restaurer la vue où l'utilisateur était */
@@ -710,7 +710,7 @@ function _requireAdmin(fn=''){
 }
 function _requirePrivileged(fn=''){
   if(!curUser){console.warn('[Sécurité] Non connecté');return false;}
-  const ok=curUser.role==='admin'||curUser.role==='commission'||(curUser.adminTabs||[]).length>0;
+  const ok=curUser.role==='admin'||curUser.role==='commission'||(curUser.tabs||[]).length>0;
   if(!ok)console.warn('[Sécurité] Accès refusé à '+fn);
   return ok;
 }
@@ -1104,7 +1104,7 @@ function _hideSplash(){
 function bNav(cid,av){
   const c=document.getElementById(cid);if(!c||!curUser)return;
   const r=curUser.role;
-  const tabs=curUser.adminTabs||[];
+  const tabs=curUser.tabs||[];
   const hasTab=k=>r==='admin'||tabs.includes(k);
   /* L'admin voit toujours les deux catalogues */
   if(r==='admin')curUser.canSeeSpiritual=true;
@@ -1224,7 +1224,7 @@ function doLogout(){stopRealtimeSync();curUser=null;localStorage.removeItem('cb_
 function showAdm(){
   if(!curUser)return;
   const isAdmin=curUser.role==='admin';
-  const tabs=curUser.adminTabs||[];
+  const tabs=curUser.tabs||[];
   /* Non-admin sans aucun onglet admin autorisé → refuser */
   if(!isAdmin&&!tabs.includes('members')&&!tabs.includes('stats'))return;
   sv('vadm');sChip('a3','n3');
@@ -1342,7 +1342,7 @@ function showCat(){
   /* Afficher/masquer la section "Mes étagères" selon le rôle */
   const _shelfSec=document.getElementById('shelf-mgr-section');
   if(_shelfSec){
-    const _isSM=curUser&&(curUser.role==='enrol'||(curUser.adminTabs||[]).includes('shelf_mgr'));
+    const _isSM=curUser&&(curUser.role==='enrol'||(curUser.tabs||[]).includes('shelf_mgr'));
     _shelfSec.style.display=_isSM?'block':'none';
     if(_isSM)rShelfMgrView();
   }
@@ -2209,7 +2209,7 @@ function showCA(){
   /* Section "Mes étagères" dans la vue enrôleur */
   const _shelfSecCA=document.getElementById('shelf-mgr-section');
   if(_shelfSecCA){
-    const _isSMCA=curUser&&(curUser.role==='enrol'||(curUser.adminTabs||[]).includes('shelf_mgr'));
+    const _isSMCA=curUser&&(curUser.role==='enrol'||(curUser.tabs||[]).includes('shelf_mgr'));
     _shelfSecCA.style.display=_isSMCA?'block':'none';
     if(_isSMCA)rShelfMgrView();
   }
@@ -2724,7 +2724,7 @@ const ROLE_LABELS={admin:'Administrateur',resident:'Résident',commission:'Membr
 /* Retourne la liste des capacités d'un utilisateur selon son rôle et ses onglets */
 function _userCapabilities(u){
   const caps=[];
-  const tabs=u.adminTabs||[];
+  const tabs=u.tabs||[];
   /* Capacités communes à tous */
   caps.push({icon:'📚',title:'Consulter le catalogue',desc:'Parcourir et rechercher les livres de la bibliothèque.'});
   caps.push({icon:'👤',title:'Gérer votre profil',desc:'Mettre à jour votre photo, téléphone et informations personnelles.'});
@@ -3074,12 +3074,12 @@ function openUM(id=null){
     if(k==='loans_validator'){
       /* Pour résident/commission : coché par défaut si pas de donnée existante */
       const isEligibleRole=roleCurrent==='resident'||roleCurrent==='commission';
-      const hasExplicitData=u4?.adminTabs!==undefined;
+      const hasExplicitData=u4?.tabs!==undefined;
       el.checked=hasExplicitData
-        ?!!(u4.adminTabs&&u4.adminTabs.includes(k))
+        ?!!(u4.tabs&&u4.tabs.includes(k))
         :isEligibleRole; /* nouveau membre éligible → coché par défaut */
     }else{
-      el.checked=!!(u4?.adminTabs&&u4.adminTabs.includes(k));
+      el.checked=!!(u4?.tabs&&u4.tabs.includes(k));
     }
   });
   /* Masquer le bloc onglets admin si le rôle sélectionné est admin (déjà tous les droits) */
@@ -3145,7 +3145,7 @@ async function savU(){if(!_requirePrivileged('savU'))return;
   /* Collecter les droits onglets admin */
   const tabKeys=['loans_validator','stats','members','shelf_mgr'];
   const adminTabs=tabKeys.filter(k=>{const el=document.getElementById('uf-tab-'+k);return el?.checked;});
-  const extras={profession:pro,whatsapp:wa,commune:com,photoB64:ufPhotoB64||null,canLoan:canLoanEl?.checked||false,adminTabs};
+  const extras={profession:pro,whatsapp:wa,commune:com,photoB64:ufPhotoB64||null,canLoan:canLoanEl?.checked||false,tabs:adminTabs};
   if(ufEid){
     const existing=users.find(u=>u.id==ufEid);
     if(existing&&existing.role==='admin'&&rl!=='admin'&&countAdmins()<=1){document.getElementById('ufe').textContent='⚠️ Seul administrateur.';return;}
@@ -3561,7 +3561,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
 
     /* 10. Membres avec loans_validator mais rôle non éligible */
     const badValidator=users.filter(u=>{
-      const tabs=u.adminTabs||[];
+      const tabs=u.tabs||[];
       if(!tabs.includes('loans_validator'))return false;
       return u.role!=='resident'&&u.role!=='commission'&&u.role!=='admin';
     });
@@ -4572,7 +4572,7 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
     canPropose:true,canLoan:false,propUntil:null,disabled:false,
     expiresAt:neverExp?null:calcExpiresAt(),neverExpires:neverExp,
     whatsapp:reg.whatsapp||'',commune:reg.commune||'',profession:reg.profession||'',email:reg.email||'',
-    adminTabs:[],createdAt:new Date().toISOString()};
+    tabs:[],createdAt:new Date().toISOString()};
 
   try{
     /* 2. Réserver l'ID en sauvegardant le compteur EN PREMIER */
@@ -4695,7 +4695,7 @@ function rShelfMgrView(){
 
 function _shelfManagers(){
   return users.filter(u=>
-    !u.disabled&&(u.role==='enrol'||(u.adminTabs||[]).includes('shelf_mgr'))
+    !u.disabled&&(u.role==='enrol'||(u.tabs||[]).includes('shelf_mgr'))
   );
 }
 
@@ -5565,7 +5565,7 @@ function rLoans(filter='active'){
     tb.innerHTML=html`<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--g400)">Aucun emprunt ${labels[filter]||''}.</td></tr>`;
     return;
   }
-  const isAdmOrVal=curUser&&(curUser.role==='admin'||curUser.role==='validator'||(curUser.adminTabs&&curUser.adminTabs.includes('loans_validator')));
+  const isAdmOrVal=curUser&&(curUser.role==='admin'||curUser.role==='validator'||(curUser.tabs&&curUser.tabs.includes('loans_validator')));
   tb.innerHTML=list.map(l=>{
     const daysLeft=l.dueDate?Math.ceil((new Date(l.dueDate)-new Date(today))/(86400*1000)):null;
     const late=daysLeft!==null&&daysLeft<0&&l.status==='active';
