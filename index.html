@@ -51,7 +51,7 @@
       <p id="sa-err" class="sa-err" style="text-align:center;margin-top:12px"></p>
       <button type="button" onclick="saDiagnose()" style="background:none;border:none;color:rgba(255,255,255,.25);font-size:11px;cursor:pointer;margin-top:8px;width:100%;font-family:inherit;text-decoration:underline">🔍 Diagnostiquer la connexion</button>
       <div id="sa-diag" style="display:none;margin-top:12px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 14px;font-size:11px;color:rgba(255,255,255,.7);line-height:2;font-family:monospace"></div>
-      <p style="text-align:center;color:rgba(255,255,255,.15);font-size:11px;margin-top:16px">Mot de passe par défaut : Admin2025</p>
+      <p style="text-align:center;color:rgba(255,255,255,.15);font-size:11px;margin-top:16px">Contactez l'administrateur système pour obtenir le mot de passe.</p>
     </div>
   </div>
 
@@ -76,7 +76,7 @@
         <!-- Avertissement mot de passe par défaut -->
         <div id="sa-default-pwd-warn" style="display:none" class="sa-warn">
           <span style="font-size:20px">⚠️</span>
-          <div style="flex:1"><strong>Vous utilisez le mot de passe par défaut (Admin2025).</strong> Changez-le pour sécuriser l'accès.</div>
+          <div style="flex:1"><strong>Vous utilisez le mot de passe par défaut.</strong> Changez-le pour sécuriser l'accès.</div>
           <button class="sa-btn-primary" style="padding:8px 16px;font-size:13px" onclick="openM('m-sa-changepwd')">🔑 Changer maintenant</button>
         </div>
 
@@ -93,9 +93,14 @@
           <div class="sa-grid2">
             <div class="sa-fg">
               <label class="sa-label">Code unique <span style="color:#f87171">*</span></label>
-              <input class="sa-fi" id="sa-new-code" placeholder="ex: lumiere, centre2…" autocapitalize="none" spellcheck="false"
-                oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
-              <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">URL : votresite.netlify.app/<strong>code</strong></p>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input class="sa-fi" id="sa-new-code" placeholder="Code généré automatiquement…" autocapitalize="none" spellcheck="false" style="flex:1"
+                  oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+                <button type="button" onclick="document.getElementById('sa-new-code').value=saGenSpaceCode()"
+                  style="background:rgba(165,180,252,.12);color:#a5b4fc;border:1px solid rgba(165,180,252,.2);border-radius:9px;padding:10px 13px;cursor:pointer;font-size:14px;white-space:nowrap;font-family:inherit;transition:all .2s"
+                  title="Générer un nouveau code aléatoire">🔄</button>
+              </div>
+              <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">URL : votresite.netlify.app/<strong>code</strong> — Généré aléatoirement pour éviter la devinette.</p>
             </div>
             <div class="sa-fg">
               <label class="sa-label">Nom complet <span style="color:#f87171">*</span></label>

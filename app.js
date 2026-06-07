@@ -8,13 +8,22 @@
    Accès super-admin : /{code}  où code = '~admin'
 ═══════════════════════════════════════════════════════════════ */
 
+/* Échappe le HTML pour prévenir les XSS dans les innerHTML */
+function esc(s){if(s==null)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+
+/* Tagged template : échappe automatiquement toutes les interpolations.
+   Utiliser safe(expr) pour les fragments HTML de confiance (ex: rBdg(), sBdg()).
+   Usage : el.innerHTML = html`<div>${b.titre} ${safe(rBdg(b.role))}</div>` */
+function html(strings,...vals){return strings.reduce((out,str,i)=>{if(i>=vals.length)return out+str;const v=vals[i];if(v==null)return out+str;if(typeof v==='object'&&v.__html===true)return out+str+v.v;return out+str+esc(v);},'')}
+function safe(v){return{__html:true,v:v??''}}
+
 /* Lecture du code depuis l'URL */
 /* ════════════════════════════════════════════════════════════
-   CODE PAR DÉFAUT — À mettre à jour après migration Firebase
-   Remplacez 'comoe' par le nouveau code de votre bibliothèque
-   Ex: 'a3f9-b2c1-d8e4'
+   CODE PAR DÉFAUT — Espace Supabase par défaut
+   Code opaque (difficile à deviner) pour éviter l'énumération
+   entre bibliothèques.
 ════════════════════════════════════════════════════════════ */
-const DEFAULT_SPACE = 'comoe';
+const DEFAULT_SPACE = 'f9a0-60a0-5274';
 
 /* Détection du mode et de l'espace depuis l'URL
    /book/[code]  → catalogue public sans connexion
@@ -56,7 +65,7 @@ function _initSb(){
   sb = supabase.createClient(SB_URL, SB_KEY);
 }
 
-/* ── Mapping noms Firestore → tables Supabase ── */
+/* ── Mapping noms collections → tables Supabase ── */
 function _colToTable(col){
   const m={
     loginLog:'login_logs', deletedUsers:'deleted_users',
@@ -221,11 +230,11 @@ async function saveContact(){
   const time=document.getElementById('adm-meeting-time')?.value.trim()||'';
   const countryCode=document.getElementById('adm-country-code')?.value.trim()||'';
   const shortLink=document.getElementById('adm-short-link')?.value.trim()||'';
-  cfg.contactNumber=num;cfg.contactName=name;cfg.meetingPlace=place;cfg.meetingTime=time;
-  cfg.defaultCountryCode=countryCode;cfg.shortLink=shortLink;
+  cfg.contact=num;cfg.contactName=name;cfg.meetingPlace=place;cfg.meetingTime=time;
+  cfg.countryCode=countryCode;cfg.shortLink=shortLink;
   const msg=document.getElementById('adm-contact-msg');
   try{
-    await sbUpd('config','main',{contactNumber:num,contactName:name,meetingPlace:place,meetingTime:time,defaultCountryCode:countryCode,shortLink});
+    await sbUpd('config','main',{contact:num,contactName:name,meetingPlace:place,meetingTime:time,countryCode:countryCode,shortLink});
     if(msg){msg.style.color='#16a34a';msg.textContent='✅ Enregistré';setTimeout(()=>{if(msg)msg.textContent='';},3000);}
   }catch(e){if(msg){msg.style.color='#dc2626';msg.textContent='Erreur : '+e.message;}}
 }
@@ -324,7 +333,7 @@ function applySpaceTheme(){
   document.querySelectorAll('.nbr').forEach(el=>{
     const logoSpan=el.querySelector('[id^="nbr-logo-"]');
     const txt=logoSpan?logoSpan.outerHTML:'';
-    el.innerHTML=txt+`<span style="font-family:'Cormorant Garamond',serif">${SPACE.short}</span>`;
+    el.innerHTML=txt+`<span style="font-family:'Cormorant Garamond',serif">${esc(SPACE.short)}</span>`;
   });
   const loginTitle=document.getElementById('login-title');
   if(loginTitle)loginTitle.innerHTML=SPACE.short.replace(/([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ][a-zàâéèêëîïôùûüç]+)([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ].*)/, '$1<span>$2</span>');
@@ -392,7 +401,7 @@ async function loadAllData(){
     const _g=()=>document.getElementById('pub-cgrid');
     const _status=(icon,msg,detail='')=>{
       const g=_g();
-      if(g)g.innerHTML=`<div style="grid-column:1/-1;text-align:center;padding:48px 16px">
+      if(g)g.innerHTML=html`<div style="grid-column:1/-1;text-align:center;padding:48px 16px">
         <div style="font-size:32px;margin-bottom:10px">${icon}</div>
         <div style="font-size:14px;color:var(--g600);font-weight:500">${msg}</div>
         ${detail?`<div style="font-size:12px;color:var(--g400);margin-top:6px;max-width:400px;margin-left:auto;margin-right:auto;line-height:1.6">${detail}</div>`:''}
@@ -425,8 +434,8 @@ async function loadAllData(){
       try{
         const cfgDoc=await sbGetDoc('config',SPACE_ID);
         if(cfgDoc){
-          if(cfgDoc.contactNumber)_pubContactData={number:cfgDoc.contactNumber,name:cfgDoc.contactName||''};
-          _pubMeeting={place:cfgDoc.meetingPlace||'',time:cfgDoc.meetingTime||'',countryCode:cfgDoc.defaultCountryCode||'',shortLink:cfgDoc.shortLink||''};
+          if(cfgDoc.contact)_pubContactData={number:cfgDoc.contact,name:cfgDoc.contactName||''};
+          _pubMeeting={place:cfgDoc.meetingPlace||'',time:cfgDoc.meetingTime||'',countryCode:cfgDoc.countryCode||'',shortLink:cfgDoc.shortLink||''};
         }
       }catch(e){/* contact optionnel */}
 
@@ -448,7 +457,7 @@ async function loadAllData(){
       }
       const cats=[...new Set(_pubBooks.map(b=>b.cat).filter(Boolean))].sort();
       const dl=document.getElementById('pub-dl-cat');
-      if(dl)dl.innerHTML=cats.map(c=>`<option value="${c}"></option>`).join('');
+      if(dl)dl.innerHTML=cats.map(c=>html`<option value="${c}"></option>`).join('');
       const loginUrl=window.location.href.replace('/book/'+SPACE_ID,'/'+SPACE_ID)+'?login=1';
       document.querySelectorAll('.pub-login-link').forEach(el=>{
         el.href=loginUrl;el.onclick=e=>{e.preventDefault();window.location.href=loginUrl;};
@@ -485,7 +494,7 @@ async function loadAllData(){
     /* ── 3. Lecture _spaces/{SPACE_ID} — avec cache localStorage (TTL 1h) ── */
     dbg.push('3. Lecture _spaces/'+SPACE_ID+'...');
     showLoading('Vérification du centre…');
-    /* Tentative de lecture depuis le cache pour économiser 1 lecture Firebase/session */
+    /* Tentative de lecture depuis le cache pour économiser 1 lecture Supabase/session */
     const _spacesCacheKey='cb_space_'+SPACE_ID;
     let spaceDoc=null;
     try{
@@ -560,7 +569,7 @@ async function loadAllData(){
           hideLoading();return;
         }
 
-        /* Vérification renforcée : abbrev + token Firebase (si disponible) */
+        /* Vérification renforcée : abbrev + token de session */
         if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled){
           /* Session valide — normaliser l'ID */
           userDoc.id=parseInt(sessionData.id)||sessionData.id;
@@ -627,23 +636,7 @@ let dataReady = false;
 /* ═══════════════════════════════════════════════════════════════
    QUOTA TRACKING — Comptage opérations (localStorage, réinitialisé chaque jour)
 ═══════════════════════════════════════════════════════════════ */
-const _qCols=['books','loans','users','requests','sessions','config','counters','loginLog','deletedUsers','shelfChecks','registrations'];
-let _qCache=null;
-
-function _qKey(){ return 'cb_quota_'+new Date().toISOString().split('T')[0]+'_'+SPACE_ID; }
-function _qLoad(){
-  if(_qCache)return _qCache;
-  try{ _qCache=JSON.parse(localStorage.getItem(_qKey())||'{}');}catch(e){_qCache={};}
-  if(!_qCache.r)_qCache={r:0,w:0,d:0};
-  return _qCache;
-}
-function _qTrack(type,count=1){
-  const q=_qLoad();
-  q[type]=(q[type]||0)+count;
-  try{localStorage.setItem(_qKey(),JSON.stringify(q));}catch(e){}
-  /* Mise à jour panneau quota si ouvert */
-  if(document.getElementById('ap-quota')?.classList.contains('active')) rQuotaPanel();
-}
+function _qTrack(){/* no-op — quota tracking supprimé (spécifique Firebase) */}
 
 /* Supabase Realtime notifie automatiquement tous les clients — pas de bump nécessaire */
 async function _bumpSync(){}
@@ -803,7 +796,7 @@ async function _fetchAndCache(col, sv){
   const changedId=sv?sv['_sv_'+col+'_id']||'':'';
 
   if(changedId.startsWith('DEL:')){
-    /* Suppression : retirer le doc du tableau local — 0 lecture Firebase */
+    /* Suppression : retirer le doc du tableau local — 0 lecture Supabase */
     const delId=changedId.slice(4);
     if(col==='books')      books=books.filter(x=>String(x.id)!==delId);
     else if(col==='loans') loans=loans.filter(x=>String(x.id)!==delId);
@@ -912,6 +905,7 @@ async function _fetchAllREST(){
 /* startRealtimeSync : async, garantit que les données sont chargées avant de retourner */
 async function startRealtimeSync(){
   if(_rtChannel&&dataReady){console.log('[RT] Déjà actif et prêt');return;}
+  if(_rtChannel){sb.removeChannel(_rtChannel);_rtChannel=null;}
   dataReady=false;
 
   /* ── 1. Cache localStorage ── */
@@ -1202,10 +1196,9 @@ async function doLogin(){
     errEl.textContent='';
     document.getElementById('li').value='';
     /* Ajouter un token de session pour durcir contre la manipulation du localStorage */
-      const sessionToken=(()=>{let t='';for(let i=0;i<16;i++)t+='0123456789abcdef'[Math.random()*16|0];return t;})();
+      const sessionToken=(()=>{const b=new Uint8Array(16);crypto.getRandomValues(b);return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('');})();
       const sessionPayload={id:u.id,abbrev:u.abbrev,tok:sessionToken,ts:Date.now()};
       localStorage.setItem('cb_session',JSON.stringify(sessionPayload));
-      /* Token stocké uniquement en local — pas d'écriture Firebase à chaque login */
     /* Charger les données puis naviguer */
     await loadRestData();
     try{
@@ -1267,11 +1260,11 @@ function showAdm(){
     setRegFilter('pending');
     const punEl=document.getElementById('pun');if(punEl)punEl.min=todayStr();
     const admMotifEl=document.getElementById('adm-motif');if(admMotifEl)admMotifEl.value=cfg.propMotif||'';
-    const admContactEl=document.getElementById('adm-contact');if(admContactEl)admContactEl.value=cfg.contactNumber||'';
+    const admContactEl=document.getElementById('adm-contact');if(admContactEl)admContactEl.value=cfg.contact||'';
     const admContactNameEl=document.getElementById('adm-contact-name');if(admContactNameEl)admContactNameEl.value=cfg.contactName||'';
     const admMeetPlaceEl=document.getElementById('adm-meeting-place');if(admMeetPlaceEl)admMeetPlaceEl.value=cfg.meetingPlace||'';
     const admMeetTimeEl=document.getElementById('adm-meeting-time');if(admMeetTimeEl)admMeetTimeEl.value=cfg.meetingTime||'';
-    const admCountryEl=document.getElementById('adm-country-code');if(admCountryEl)admCountryEl.value=cfg.defaultCountryCode||'';
+    const admCountryEl=document.getElementById('adm-country-code');if(admCountryEl)admCountryEl.value=cfg.countryCode||'';
     const admShortLinkEl=document.getElementById('adm-short-link');if(admShortLinkEl)admShortLinkEl.value=cfg.shortLink||'';
     updPDFBtn();
   }
@@ -1310,11 +1303,12 @@ function showMyLoans(){
       isPendingReturn?'<div style="margin-top:6px;font-size:12px;font-weight:600;color:#ea580c;background:#fff7ed;padding:4px 10px;border-radius:20px;display:inline-block">&#9203; Retour déclaré — en attente de confirmation</div>':
       `<div style="font-size:13px;font-weight:600;color:${late?'#dc2626':days!==null&&days<=3?'#d97706':'var(--green)'};margin-top:4px">
         ${late?'&#9888;&#65039; En retard — retour prévu le '+l.dueDate:days===null?'—':days===0?'&#128197; Retour aujourd\'hui !':(days>0?'&#128197; Retour dans '+days+'j ('+l.dueDate+')':'')}</div>`;
-    return `<div style="background:${late?'#fff5f5':isPendingReturn?'#fff7ed':'var(--g50)'};border-radius:10px;padding:14px 16px;border:1.5px solid ${late?'#fca5a5':isPendingReturn?'#fed7aa':'var(--g200)'};margin-bottom:10px">
+    return html`<div style="background:${late?'#fff5f5':isPendingReturn?'#fff7ed':'var(--g50)'};border-radius:10px;padding:14px 16px;border:1.5px solid ${late?'#fca5a5':isPendingReturn?'#fed7aa':'var(--g200)'};margin-bottom:10px">
       <div style="font-weight:600;font-size:15px;color:var(--navy)">${l.bookTitle}</div>
       <div style="font-size:13px;color:var(--g500);margin-top:4px">Demandé le ${l.requestedAt?new Date(l.requestedAt).toLocaleDateString('fr-FR'):'—'}</div>
-      ${statusLine}
-      ${l.status==='active'?`<button type="button" onclick="markReturned('${l.id}');document.getElementById('m-my-loans-overlay')?.remove()" style="margin-top:8px;background:var(--green);color:white;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">&#128196; Déclarer le retour</button>`:''}
+      ${safe(statusLine)}
+      ${safe(l.status==='active'?`<button type="button" onclick="markReturned('${l.id}');document.getElementById('m-my-loans-overlay')?.remove()" style="margin-top:8px;background:var(--green);color:white;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">&#128196; Déclarer le retour</button>`:'')}
+
     </div>`;
   };
   modal.innerHTML=`<div style="background:white;border-radius:20px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.25)">
@@ -1325,7 +1319,7 @@ function showMyLoans(){
     <div style="padding:20px 24px">
       ${myLoans.length===0&&past.length===0?'<p style="color:var(--g400);text-align:center;padding:24px 0">Aucun emprunt en cours ou récent.</p>':''}
       ${myLoans.length?`<h4 style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📖 En cours (${myLoans.length})</h4>${myLoans.map(rows).join('')}`:''}
-      ${past.length?`<h4 style="font-size:14px;font-weight:700;color:var(--g500);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.5px">📋 Historique récent</h4>${past.map(l=>{const isRej=l.status==='rejected';return `<div style="background:${isRej?'#fff5f5':'var(--g50)'};border-radius:10px;padding:12px 16px;margin-bottom:8px;border:1px solid ${isRej?'#fca5a5':'var(--g200)'}"><div style="font-weight:600;font-size:14px;color:var(--navy)">${l.bookTitle}</div><div style="font-size:12px;margin-top:4px">${isRej?'<span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#10060; Demande rejetée</span>':'<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#9989; Retourné</span>'} <span style="color:var(--g400)">${isRej?(l.rejectedAt?new Date(l.rejectedAt).toLocaleDateString('fr-FR'):'—'):(l.returnedAt?new Date(l.returnedAt).toLocaleDateString('fr-FR'):'—')}</span></div></div>`;}).join('')}`:''}
+      ${past.length?`<h4 style="font-size:14px;font-weight:700;color:var(--g500);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.5px">📋 Historique récent</h4>${past.map(l=>{const isRej=l.status==='rejected';return html`<div style="background:${isRej?'#fff5f5':'var(--g50)'};border-radius:10px;padding:12px 16px;margin-bottom:8px;border:1px solid ${isRej?'#fca5a5':'var(--g200)'}"><div style="font-weight:600;font-size:14px;color:var(--navy)">${l.bookTitle}</div><div style="font-size:12px;margin-top:4px">${isRej?'<span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#10060; Demande rejetée</span>':'<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#9989; Retourné</span>'} <span style="color:var(--g400)">${isRej?(l.rejectedAt?new Date(l.rejectedAt).toLocaleDateString('fr-FR'):'—'):(l.returnedAt?new Date(l.returnedAt).toLocaleDateString('fr-FR'):'—')}</span></div></div>`;}).join('')}`:''}
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -1360,7 +1354,7 @@ function rCatTypeTabs(){
   const allowed=curUser&&curUser.role==='admin'?['academique','spirituel']:(curUser?(_ca2[curUser.role]||['academique']):['academique']);
   if(allowed.length<=1){el.innerHTML='';catTypeFilter='all';return;}
   const tabs=[{k:'all',l:'Tous les livres',ico:'📚'},{k:'academique',l:'Académique',ico:'📚'},{k:'spirituel',l:'Spirituel',ico:'🕊️'}];
-  el.innerHTML=tabs.filter(t=>t.k==='all'||allowed.includes(t.k)).map(t=>`
+  el.innerHTML=tabs.filter(t=>t.k==='all'||allowed.includes(t.k)).map(t=>html`
     <button onclick="catTypeFilter='${t.k}';catPage=1;rCatTypeTabs();rCat();"
       style="padding:7px 16px;border-radius:20px;border:1.5px solid ${catTypeFilter===t.k?'var(--navy)':'var(--g200)'};
       background:${catTypeFilter===t.k?'var(--navy)':'white'};color:${catTypeFilter===t.k?'white':'var(--g600)'};
@@ -1426,7 +1420,7 @@ function rCat(page=catPage){
   if(!fl.length){g.innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="ei">🔍</div><p>Aucun livre ne correspond.</p></div>`;
     renderPagination('cat-pgn',1,0,CAT_PER,p=>rCat(p));return;}
   const slice=fl.slice((page-1)*CAT_PER,page*CAT_PER);
-  g.innerHTML=slice.map(b=>`<div class="bcd" onclick="showDet(${b.id})">
+  g.innerHTML=slice.map(b=>html`<div class="bcd" onclick="showDet(${b.id})">
     <div class="bcv" style="background:${cg(b.cat)}">${b.emoji||ci(b.cat)}</div>
     <div class="bbd">
       <span class="ctg" style="background:${cb(b.cat)};color:${cf(b.cat)}">${b.cat}</span>
@@ -1525,7 +1519,7 @@ function showMyRequests(){
   });
   const sessionsHtml=Object.entries(sessionMap).map(([sid,reqs])=>{
     const dateLabel=reqs[0]?.date?new Date(reqs[0].date).toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):'Session';
-    const booksHtml=reqs.map((r,i)=>`
+    const booksHtml=reqs.map((r,i)=>html`
       <div style="background:var(--g50);border-radius:10px;padding:14px 16px;border:1px solid var(--g200);margin-bottom:8px;user-select:text">
         <div style="display:flex;align-items:flex-start;gap:10px">
           <span style="background:var(--navy);color:white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:2px">${i+1}</span>
@@ -1536,7 +1530,7 @@ function showMyRequests(){
           </div>
         </div>
       </div>`).join('');
-    return `
+    return html`
       <div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--g200)">
           📅 Session du ${dateLabel} — ${reqs.length} livre(s) soumis
@@ -1549,7 +1543,7 @@ function showMyRequests(){
   overlay.id='m-my-requests-overlay';
   overlay.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
-  overlay.innerHTML=`
+  overlay.innerHTML=html`
     <div style="background:white;border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.3);width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
       <!-- En-tête -->
       <div style="padding:20px 22px 16px;border-bottom:1px solid var(--g100);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
@@ -1593,34 +1587,34 @@ function showDet(id){
   const eB=e=>e?`<span class="badge ${e==='Bon'?'bbon':e==='Moyen'?'bmoy':'bmauv'}">${e}</span>`:'';
   const aB=a=>a?`<span class="badge ${a==='Nouveau'?'bnv':'banc'}">${a}</span>`:'';
   const priv=isPrivileged();
-  document.getElementById('mdb').innerHTML=`
+  document.getElementById('mdb').innerHTML=html`
     <div class="dh">
       <div class="dcv" style="background:${cg(b.cat)}">${b.emoji||ci(b.cat)}</div>
-      <div class="di"><h2>${b.titre}</h2><div class="dat">✍️ ${b.auteur||'—'}</div>
+      <div class="di"><h2>${esc(b.titre)}</h2><div class="dat">✍️ ${esc(b.auteur)||'—'}</div>
         <div class="dtg">
-          <span style="background:${cb(b.cat)};color:${cf(b.cat)}">${b.cat}</span>
-          ${b.lang?`<span style="background:#e0f2fe;color:#0369a1">🌐 ${b.lang}</span>`:''}
-          ${b.annee?`<span style="background:#f1f5f9;color:#475569">📅 ${b.annee}</span>`:''}
-          ${b.editeur?`<span style="background:#f1f5f9;color:#475569">🏢 ${b.editeur}</span>`:''}
+          <span style="background:${cb(b.cat)};color:${cf(b.cat)}">${esc(b.cat)}</span>
+          ${b.lang?`<span style="background:#e0f2fe;color:#0369a1">🌐 ${esc(b.lang)}</span>`:''}
+          ${b.annee?`<span style="background:#f1f5f9;color:#475569">📅 ${esc(String(b.annee))}</span>`:''}
+          ${b.editeur?`<span style="background:#f1f5f9;color:#475569">🏢 ${esc(b.editeur)}</span>`:''}
           ${priv?aB(b.ancienNouv):''}${priv?eB(b.etat):''}
         </div>
       </div>
     </div>
     ${priv?`<div class="dig">
       <div class="dii"><div class="dl">Exemplaires</div><div class="dv">${b.expl||1} ex.</div></div>
-      <div class="dii"><div class="dl">État</div><div class="dv">${b.etat||'—'}</div></div>
-      <div class="dii"><div class="dl">Acquisition</div><div class="dv">${b.ancienNouv||'—'}</div></div>
+      <div class="dii"><div class="dl">État</div><div class="dv">${esc(b.etat)||'—'}</div></div>
+      <div class="dii"><div class="dl">Acquisition</div><div class="dv">${esc(b.ancienNouv)||'—'}</div></div>
     </div>`:''}
     ${(b.salle||b.placard||b.etagere)?`<div class="dloc">
       <span class="dll">📍 Localisation</span>
-      ${b.salle?`<span class="dlv">Salle : ${b.salle}</span>`:''}
-      ${b.placard?`<span class="dlv">Placard : ${b.placard}</span>`:''}
-      ${b.etagere?`<span class="dlv">Étagère : ${b.etagere}</span>`:''}
+      ${b.salle?`<span class="dlv">Salle : ${esc(b.salle)}</span>`:''}
+      ${b.placard?`<span class="dlv">Placard : ${esc(b.placard)}</span>`:''}
+      ${b.etagere?`<span class="dlv">Étagère : ${esc(b.etagere)}</span>`:''}
     </div>`:''}
-    ${b.resume?`<div class="dres"><h4>Résumé</h4><p>${b.resume}</p></div>`:''}
+    ${b.resume?`<div class="dres"><h4>Résumé</h4><p>${esc(b.resume)}</p></div>`:''}
     ${b.addedAt&&(Date.now()-new Date(b.addedAt).getTime())<30*86400*1000?'<div style="margin-top:10px"><span style="background:#d1fae5;color:#065f46;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">🆕 Nouveau livre</span></div>':''}
     ${b.featured?'<div style="margin-top:6px"><span style="background:#fef9c3;color:#92400e;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700">⭐ Mis en avant</span></div>':''}
-    ${b.updatedAt?`<div style="margin-top:10px;font-size:11px;color:var(--g400)">📝 Ajouté le ${b.addedAt?new Date(b.addedAt).toLocaleDateString('fr-FR'):'—'} · Modifié le ${new Date(b.updatedAt).toLocaleDateString('fr-FR')} par ${b.updatedBy||'?'} · v${b.version||1}</div>`:''}
+    ${b.updatedAt?`<div style="margin-top:10px;font-size:11px;color:var(--g400)">📝 Ajouté le ${b.addedAt?new Date(b.addedAt).toLocaleDateString('fr-FR'):'—'} · Modifié le ${new Date(b.updatedAt).toLocaleDateString('fr-FR')} par ${esc(b.updatedBy)||'?'} · v${b.version||1}</div>`:''}
     ${(()=>{
       const borrowed=b.status==='borrowed';
       const isMissing=b.status==='missing';
@@ -1631,7 +1625,7 @@ function showDet(id){
         const since=b.missingAt?new Date(b.missingAt).toLocaleDateString('fr-FR'):'—';
         const note=b.missingNote?`<div style="font-size:12px;margin-top:6px;opacity:.85">${b.missingNote}</div>`:'';
         const foundBtn=priv?`<button type="button" class="btn bg btn-sm" onclick="reportMissing(${b.id})" style="margin-top:10px;background:#16a34a;border:none">✅ Marquer comme retrouvé</button>`:'';
-        return `<div class="cnot" style="background:#fff7ed;border-color:#f97316;color:#9a3412">
+        return html`<div class="cnot" style="background:#fff7ed;border-color:#f97316;color:#9a3412">
           ⚠️ <strong>Livre introuvable</strong> — signalé le ${since}${note}
           ${foundBtn}
         </div>`;
@@ -1783,7 +1777,7 @@ function swCom(t,b){
 function rComSt(){
   const t=requests.length,p=requests.filter(r=>r.status==='pending').length,
         a=requests.filter(r=>r.status==='approved').length,rj=requests.filter(r=>r.status==='rejected').length;
-  document.getElementById('cst').innerHTML=`
+  document.getElementById('cst').innerHTML=html`
     <div class="stc stT"><div class="sv" style="color:var(--navy)">${t}</div><div class="sl">Total</div></div>
     <div class="stc stP"><div class="sv" style="color:#b45309">${p}</div><div class="sl">En attente</div></div>
     <div class="stc stA"><div class="sv" style="color:var(--green)">${a}</div><div class="sl">Approuvées</div></div>
@@ -1798,24 +1792,24 @@ function rComT(){
   tb.innerHTML=list.map(r=>{
     const u=users.find(x=>x.id==r.dem);
     const simC=fSimRq(r.titre,r.auteur);
-    const simCellC=simC.length?simC.map(b=>`<span onclick="showDet(${b.id})" title="${b.titre}" style="display:inline-block;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eff6ff;color:#1d4ed8;border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;margin:1px">${b.titre.length>20?b.titre.substring(0,20)+'…':b.titre}</span>`).join(' '):'<span style="color:var(--g400)">—</span>';
-    return `<tr><td style="color:var(--g400)">#${r.id}</td>
+    const simCellC=simC.length?simC.map(b=>html`<span onclick="showDet(${b.id})" title="${b.titre}" style="display:inline-block;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eff6ff;color:#1d4ed8;border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;margin:1px">${b.titre.length>20?b.titre.substring(0,20)+'…':b.titre}</span>`).join(' '):'<span style="color:var(--g400)">—</span>';
+    return html`<tr><td style="color:var(--g400)">#${r.id}</td>
       <td style="font-weight:600;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.titre}</td>
       <td>${r.auteur||'—'}</td>
-      <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px" title="${r.desc||''}">${r.desc?`<a href="${r.desc.startsWith('http')?r.desc:'#'}" target="_blank" style="color:var(--green)">${r.desc.substring(0,30)}${r.desc.length>30?'…':''}</a>`:'—'}</td>
+      <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px" title="${r.desc||''}">${safe(r.desc?html`<a href="${r.desc.startsWith('http')?r.desc:'#'}" target="_blank" style="color:var(--green)">${r.desc.substring(0,30)}${r.desc.length>30?'…':''}</a>`:'—')}</td>
       <td>${u?u.prenom+' '+u.nom:'—'}</td>
       <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic;color:var(--gd);font-size:12px">${r.motif||'—'}</td>
       <td style="color:var(--g400);white-space:nowrap;font-size:12px">${r.date}</td>
-      <td style="min-width:110px">${simCellC}</td>
-      <td>${sBdg(r.status)}</td>
-      <td>${ro?'':`<div style="display:flex;align-items:center;gap:6px">
+      <td style="min-width:110px">${safe(simCellC)}</td>
+      <td>${safe(sBdg(r.status))}</td>
+      <td>${safe(ro?'':`<div style="display:flex;align-items:center;gap:6px">
         <select class="fi fi-l" style="padding:5px 8px;font-size:12px;width:auto" onchange="chgSt(${r.id},this.value,'com')">
         <option value="pending" ${r.status==='pending'?'selected':''}>⏳ En attente</option>
         <option value="approved" ${r.status==='approved'?'selected':''}>✅ Approuvée</option>
         <option value="rejected" ${r.status==='rejected'?'selected':''}>❌ Rejetée</option>
       </select>
         ${(r.status==='approved'||r.status==='rejected')?`<button type="button" onclick="delRq(${r.id})" title="Supprimer cette demande" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;flex-shrink:0">🗑️</button>`:''}
-      </div>`}</td></tr>`;
+      </div>`)}</td></tr>`;
   }).join('');
 }
 
@@ -1849,7 +1843,7 @@ function updPDFBtn(){
   const cnt=requests.filter(r=>r.status==='approved').length;
   ['pdf-btn-com','pdf-btn-adm'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el&&has)el.innerHTML=`📄 Exporter PDF (${cnt} approuvée${cnt>1?'s':''})`;
+    if(el&&has)el.innerHTML=html`📄 Exporter PDF (${cnt} approuvée${cnt>1?'s':''})`;
   });
 }
 
@@ -1862,12 +1856,13 @@ function rSessList(){
   el.innerHTML=`<div class="sess-grid">${sessions.slice().reverse().map(s=>{
     const cnt=requests.filter(r=>r.sessionId==s.id).length;
     const isOpen=!s.closed&&cfg.currentSessionId==s.id;
-    return `<div class="sess-card${isOpen?' open-sess':''}" onclick="showSessionDetail(${s.id})">
-      <div class="sess-num">Session N°${s.id} ${isOpen?'<span class="badge bapp">● En cours</span>':''}</div>
+    return html`<div class="sess-card${isOpen?' open-sess':''}" onclick="showSessionDetail(${s.id})">
+      <div class="sess-num">Session N°${s.id} ${safe(isOpen?'<span class="badge bapp">● En cours</span>':'')}</div>
       <div class="sess-motif">${s.motif}</div>
       <div class="sess-meta">
         <span>📅 ${fmtDateLong(s.openDate)}</span>
-        ${s.closed?`<span>🔒 Fermée le ${fmtDateLong(s.closedDate)}</span>`:''}
+        ${safe(s.closed?`<span>🔒 Fermée le ${fmtDateLong(s.closedDate)}</span>`:'')}
+
         <span class="sess-cnt">📋 ${cnt} demande${cnt>1?'s':''}</span>
       </div>
     </div>`;
@@ -1953,20 +1948,20 @@ function rComUsers(){
   });
   tb.innerHTML=list.map(u=>{
     const propActive=u.canPropose;
-    return `<tr>
-      <td>${ro?'':`<input type="checkbox" class="mbr-chk" data-id="${u.id}" ${mbrSelected.has(u.id)?'checked':''} onchange="onMbrChk(${u.id},this.checked)" style="cursor:pointer"/>`}</td>
+    return html`<tr>
+      <td>${safe(ro?'':`<input type="checkbox" class="mbr-chk" data-id="${u.id}" ${mbrSelected.has(u.id)?'checked':''} onchange="onMbrChk(${u.id},this.checked)" style="cursor:pointer"/>`)}</td>
       <td><code class="pl">${u.abbrev}</code></td>
       <td style="font-weight:500">${u.prenom} ${u.nom}</td>
-      <td>${rBdg(u.role)}</td>
+      <td>${safe(rBdg(u.role))}</td>
       <td style="min-width:140px">
-        ${(curUser&&curUser.role==='resident')?
+        ${safe((curUser&&curUser.role==='resident')?
           `<span class="badge ${u.canPropose?'bapp':'bmem'}">${u.canPropose?'✅ Autorisé':'Non'}</span>`:
           `<div style="display:flex;align-items:center;gap:8px">
             <label class="tgl" style="flex-shrink:0"><input type="checkbox" ${u.canPropose?'checked':''} onchange="comTogP(${u.id},this.checked)"/><span class="ts"></span></label>
             <span style="font-size:12px;font-weight:500;color:${u.canPropose?'var(--gd)':'var(--g500)'}">
               ${u.canPropose?'✅ Autorisé':'Non autorisé'}
             </span>
-          </div>`}
+          </div>`)}
       </td>
     </tr>`;
   }).join('');
@@ -2049,7 +2044,7 @@ function buildStats(){
   const topLog=Object.entries(logMap).sort((a,b)=>b[1]-a[1]).slice(0,5),maxL=topLog[0]?.[1]||1;
   const devMap={};loginLog.forEach(l=>{const d=l.device.replace(/[📱💻❓]/g,'').trim();devMap[d]=(devMap[d]||0)+1;});
   const devS=Object.entries(devMap).sort((a,b)=>b[1]-a[1]);
-  return `<div class="stg" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-bottom:28px">
+  return html`<div class="stg" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-bottom:28px">
     <div class="stc stT"><div class="sv" style="color:var(--navy)">${totalBks}</div><div class="sl">Livres total</div></div>
     <div class="stc stA"><div class="sv" style="color:var(--green)">${availBks}</div><div class="sl">Disponibles</div></div>
     <div class="stc" style="border-color:var(--g400)"><div class="sv" style="color:var(--g500)">${retiredBks}</div><div class="sl">Retirés</div></div>
@@ -2067,25 +2062,25 @@ function buildStats(){
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
     <div><h3 style="font-size:18px;color:var(--navy);margin-bottom:12px">📂 Livres par catégorie</h3>
-      <div class="stat-bar-wrap">${catS.map(([cat,cnt])=>`<div class="stat-bar-row">
+      <div class="stat-bar-wrap">${safe(catS.map(([cat,cnt])=>html`<div class="stat-bar-row">
         <div class="stat-bar-lbl" title="${cat}">${cat}</div>
         <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(cnt/maxC*100)}%"></div></div>
-        <div class="stat-bar-val">${cnt}</div></div>`).join('')}</div></div>
+        <div class="stat-bar-val">${cnt}</div></div>`).join(''))}</div></div>
     <div><h3 style="font-size:18px;color:var(--navy);margin-bottom:12px">👥 Top demandeurs</h3>
-      <div class="stat-bar-wrap">${!topReq.length?'<p style="color:var(--g400)">Aucune demande.</p>':topReq.map(x=>`<div class="stat-bar-row">
+      <div class="stat-bar-wrap">${safe(!topReq.length?'<p style="color:var(--g400)">Aucune demande.</p>':topReq.map(x=>html`<div class="stat-bar-row">
         <div class="stat-bar-lbl">${x.name}</div>
         <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(x.cnt/maxR*100)}%;background:linear-gradient(90deg,var(--navy),var(--nl))"></div></div>
-        <div class="stat-bar-val">${x.cnt}</div></div>`).join('')}</div></div>
+        <div class="stat-bar-val">${x.cnt}</div></div>`).join(''))}</div></div>
     <div><h3 style="font-size:18px;color:var(--navy);margin-bottom:12px">🔐 Connexions par utilisateur</h3>
-      <div class="stat-bar-wrap">${!topLog.length?'<p style="color:var(--g400)">Aucune connexion.</p>':topLog.map(([name,cnt])=>`<div class="stat-bar-row">
+      <div class="stat-bar-wrap">${safe(!topLog.length?'<p style="color:var(--g400)">Aucune connexion.</p>':topLog.map(([name,cnt])=>html`<div class="stat-bar-row">
         <div class="stat-bar-lbl">${name}</div>
         <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(cnt/maxL*100)}%;background:linear-gradient(90deg,var(--res),#0891b2)"></div></div>
-        <div class="stat-bar-val">${cnt}</div></div>`).join('')}</div></div>
+        <div class="stat-bar-val">${cnt}</div></div>`).join(''))}</div></div>
     <div><h3 style="font-size:18px;color:var(--navy);margin-bottom:12px">📱 Appareils</h3>
-      <div class="stat-bar-wrap">${!devS.length?'<p style="color:var(--g400)">Aucune connexion.</p>':devS.map(([dev,cnt])=>{const mx=devS[0][1];return`<div class="stat-bar-row">
+      <div class="stat-bar-wrap">${safe(!devS.length?'<p style="color:var(--g400)">Aucune connexion.</p>':devS.map(([dev,cnt])=>{const mx=devS[0][1];return html`<div class="stat-bar-row">
         <div class="stat-bar-lbl">${dev}</div>
         <div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(cnt/mx*100)}%;background:linear-gradient(90deg,#7c3aed,var(--enrol))"></div></div>
-        <div class="stat-bar-val">${cnt}</div></div>`;}).join('')}</div></div>
+        <div class="stat-bar-val">${cnt}</div></div>`;}).join(''))}</div></div>
   </div>`;
 }
 
@@ -2095,18 +2090,18 @@ function buildStats(){
 const PDF_COLS={num:{lbl:'#',fn:(r,i,u)=>i+1},titre:{lbl:'Titre',fn:(r)=>r.titre},auteur:{lbl:'Auteur',fn:(r)=>r.auteur||'—'},desc:{lbl:'Description / Lien',fn:(r)=>r.desc||'—'},demandeur:{lbl:'Demandeur',fn:(r,i,u)=>u?u.prenom+' '+u.nom:'—'},role:{lbl:'Rôle',fn:(r,i,u)=>u?u.role:'—'},note:{lbl:'Commentaire',fn:(r)=>r.note||'—'}};
 function openPdfConfig(){
   const fields=cfg.pdfFields||['num','titre','auteur','desc','demandeur'];
-  const html=Object.entries(PDF_COLS).map(([k,v])=>`<label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--g50);border-radius:8px;border:1px solid var(--g200);cursor:pointer;margin-bottom:8px">
+  const pdfHtml=Object.entries(PDF_COLS).map(([k,v])=>html`<label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--g50);border-radius:8px;border:1px solid var(--g200);cursor:pointer;margin-bottom:8px">
     <input type="checkbox" value="${k}" ${fields.includes(k)?'checked':''} style="width:16px;height:16px"/>
     <span style="font-size:14px;font-weight:500">${v.lbl}</span></label>`).join('');
   const modal=document.createElement('div');
   modal.id='pdf-cfg-modal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(10,24,40,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(5px)';
-  modal.innerHTML=`<div style="background:white;border-radius:20px;width:100%;max-width:420px;box-shadow:0 14px 44px rgba(28,67,112,.18);overflow:hidden">
+  modal.innerHTML=html`<div style="background:white;border-radius:20px;width:100%;max-width:420px;box-shadow:0 14px 44px rgba(28,67,112,.18);overflow:hidden">
     <div style="padding:20px 24px 16px;border-bottom:1px solid #f0f4f7;display:flex;align-items:center;justify-content:space-between">
       <h3 style="font-family:'Cormorant Garamond',serif;font-size:22px;color:#1C4370">⚙️ Colonnes du PDF</h3>
       <button onclick="document.getElementById('pdf-cfg-modal').remove()" style="background:#f0f4f7;border:none;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:16px">✕</button>
     </div>
-    <div style="padding:20px 24px">${html}</div>
+    <div style="padding:20px 24px">${safe(pdfHtml)}</div>
     <div style="padding:14px 24px 20px;display:flex;gap:10px;justify-content:flex-end">
       <button onclick="document.getElementById('pdf-cfg-modal').remove()" style="background:#f1f5f9;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px">Annuler</button>
       <button onclick="savePdfConfig(this)" style="background:#1C4370;color:white;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600">💾 Sauvegarder</button>
@@ -2224,7 +2219,7 @@ function caSetSort(col){
   caPage=1;rCABk(1);
 }
 function populateCASelects(){
-  const sel=(id,vals)=>{const el=document.getElementById(id);if(!el)return;const cur=el.value;el.innerHTML='<option value="">'+el.options[0].text+'</option>'+[...new Set(vals.filter(Boolean))].sort().map(v=>`<option value="${v}">${v}</option>`).join('');el.value=cur;};
+  const sel=(id,vals)=>{const el=document.getElementById(id);if(!el)return;const cur=el.value;el.innerHTML='<option value="">'+el.options[0].text+'</option>'+[...new Set(vals.filter(Boolean))].sort().map(v=>html`<option value="${v}">${v}</option>`).join('');el.value=cur;};
   sel('ca-f-cat',books.map(b=>b.cat));
   sel('ca-f-sal',books.map(b=>b.salle));
   sel('ca-f-plc',books.map(b=>b.placard));
@@ -2279,7 +2274,7 @@ function rCABk(page=caPage){
   document.getElementById('cac').textContent=books.length;
   const tb=document.getElementById('catb');
   const s=c=>caSort.col===c?(caSort.dir===1?' ↑':' ↓'):'';
-  document.getElementById('ca-th').innerHTML=`
+  document.getElementById('ca-th').innerHTML=html`
     <th onclick="caSetSort('titre')" style="cursor:pointer">Titre${s('titre')}</th>
     <th onclick="caSetSort('auteur')" style="cursor:pointer">Auteur${s('auteur')}</th>
     <th onclick="caSetSort('cat')" style="cursor:pointer">Catégorie${s('cat')}</th>
@@ -2300,12 +2295,12 @@ function rCAStat(list){
   const el=document.getElementById('ca-stats');if(!el)return;
   const total=list.length,avail=list.filter(b=>b.status!=='retired').length,retired=list.filter(b=>b.status==='retired').length;
   const cats={};list.forEach(b=>{cats[b.cat]=(cats[b.cat]||0)+1;});
-  const topCat=Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([c,n])=>`<span class="badge" style="background:${cb(c)};color:${cf(c)}">${c} (${n})</span>`).join(' ');
-  el.innerHTML=`<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--g600)">
+  const topCat=Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([c,n])=>html`<span class="badge" style="background:${cb(c)};color:${cf(c)}">${c} (${n})</span>`).join(' ');
+  el.innerHTML=html`<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--g600)">
     <span>📚 <strong>${total}</strong> livre(s)</span>
     <span style="color:var(--gd)">✅ <strong>${avail}</strong> disponible(s)</span>
-    ${retired?`<span style="color:var(--g400)">📦 <strong>${retired}</strong> retiré(s)</span>`:''}
-    ${topCat?`<span>Catégories : ${topCat}</span>`:''}
+    ${safe(retired?`<span style="color:var(--g400)">📦 <strong>${retired}</strong> retiré(s)</span>`:'')}
+    ${safe(topCat?`<span>Catégories : ${topCat}</span>`:'')}
   </div>`;
 }
 function bkRows(src,list=null){
@@ -2322,19 +2317,20 @@ function bkRows(src,list=null){
     const copiesBadge=src==='adm'?`<td style="text-align:center;font-size:13px;font-weight:600;color:${availCopies===0?'#dc2626':availCopies===1?'#d97706':'#065f46'}">${availCopies}/${copies}</td>`:'';
     const borrowed=b.status==='borrowed'||availCopies===0;
     const statusBadge=b.status==='retired'?'<span class="badge bret">📦 Retiré</span>':b.status==='missing'?'<span class="badge" style="background:#fff7ed;color:#c2410c;border:1px solid #fed7aa">⚠️ Introuvable</span>':borrowed?`<span class="badge" style="background:#ede9fe;color:#7c3aed">📖 Emprunté</span>`:'<span class="badge bavl">✅ Disponible</span>';
-    return `<tr>
-    <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.titre}${modBadge}${newBadge}${featBadge}</td>
+    return html`<tr>
+    <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.titre}${safe(modBadge)}${safe(newBadge)}${safe(featBadge)}</td>
     <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.auteur||'—'}</td>
     <td><span class="badge" style="background:${cb(b.cat)};color:${cf(b.cat)}">${b.cat}</span><br><span style="font-size:10px;color:var(--g400)">${(b.catType||'academique')==='spirituel'?'🕊️':'📚'}</span></td>
     <td style="white-space:nowrap;color:var(--g600);font-size:12px">${[b.salle,b.placard,b.etagere].filter(Boolean).join(' · ')||'—'}</td>
     <td>${b.lang||'—'}</td><td>${b.annee||'—'}</td>
-    ${copiesBadge}
-    <td>${statusBadge}</td>
+    ${safe(copiesBadge)}
+    <td>${safe(statusBadge)}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap">
       <button type="button" class="btn bo btn-xs" onclick="openBkM('${src}',${b.id})" title="Modifier">✏️</button>
       <button type="button" class="btn ${b.status==='retired'?'bg':'bwarn'} btn-xs" onclick="togBkStatus(${b.id},'${src}')" title="${b.status==='retired'?'Remettre au catalogue':b.status==='missing'?'Marquer retrouvé':'Retirer du catalogue'}">${b.status==='retired'?'✅':b.status==='missing'?'✅':'📦'}</button>
-      ${b.status!=='borrowed'&&b.status!=='retired'?`<button type="button" class="btn btn-xs" onclick="reportMissing(${b.id})" style="border:1px solid ${b.status==='missing'?'#16a34a':'#f97316'};color:${b.status==='missing'?'#16a34a':'#ea580c'}" title="${b.status==='missing'?'Marquer retrouvé':'Signaler introuvable'}">${b.status==='missing'?'Retrouvé ✅':'⚠️'}</button>`:''}
-      ${src==='adm'?`<button type="button" class="btn bd btn-xs" onclick="delBk(${b.id})" title="Supprimer définitivement">🗑️</button>`:''}
+      ${safe(b.status!=='borrowed'&&b.status!=='retired'?`<button type="button" class="btn btn-xs" onclick="reportMissing(${b.id})" style="border:1px solid ${b.status==='missing'?'#16a34a':'#f97316'};color:${b.status==='missing'?'#16a34a':'#ea580c'}" title="${b.status==='missing'?'Marquer retrouvé':'Signaler introuvable'}">${b.status==='missing'?'Retrouvé ✅':'⚠️'}</button>`:'')}
+      ${safe(src==='adm'?`<button type="button" class="btn bd btn-xs" onclick="delBk(${b.id})" title="Supprimer définitivement">🗑️</button>`:'')}
+
     </div></td>
   </tr>`;
   }).join('');
@@ -2413,7 +2409,7 @@ async function reportMissing(id){
 let admBkFilter='',admBkPage=1,admBkNewOnly=false,admBkFeatOnly=false;
 const ADM_BK_PER=10;
 function populateAdmSelects(){
-  const sel=(id,vals)=>{const el=document.getElementById(id);if(!el)return;const cur=el.value;el.innerHTML='<option value="">'+el.options[0].text+'</option>'+[...new Set(vals.filter(Boolean))].sort().map(v=>`<option value="${v}">${v}</option>`).join('');el.value=cur;};
+  const sel=(id,vals)=>{const el=document.getElementById(id);if(!el)return;const cur=el.value;el.innerHTML='<option value="">'+el.options[0].text+'</option>'+[...new Set(vals.filter(Boolean))].sort().map(v=>html`<option value="${v}">${v}</option>`).join('');el.value=cur;};
   sel('adm-f-cat',books.map(b=>b.cat));
   sel('adm-f-sal',books.map(b=>b.salle));
   sel('adm-f-lng',books.map(b=>b.lang));
@@ -2484,7 +2480,7 @@ function togLangCustom(val){
 function _fillDL(dlId,values){
   const dl=document.getElementById(dlId);if(!dl)return;
   const uniq=[...new Set(values.filter(Boolean).map(v=>String(v).trim()))].sort();
-  dl.innerHTML=uniq.map(v=>`<option value="${v.replace(/"/g,'&quot;')}"></option>`).join('');
+  dl.innerHTML=uniq.map(v=>html`<option value="${v.replace(/"/g,'&quot;')}"></option>`).join('');
 }
 
 function openBkM(src,id=null){
@@ -2596,14 +2592,14 @@ function rAdmRq(){
   tb.innerHTML=requests.map(r=>{
     const u=users.find(x=>x.id==r.dem);
     const sim=fSimRq(r.titre,r.auteur);
-    const simCell=sim.length?sim.map(b=>`<span onclick="showDet(${b.id})" title="${b.titre}" style="display:inline-block;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eff6ff;color:#1d4ed8;border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;margin:1px;vertical-align:middle">${b.titre.length>20?b.titre.substring(0,20)+'…':b.titre}</span>`).join(' '):'<span style="color:var(--g400)">—</span>';
-    return `<tr><td style="color:var(--g400)">#${r.id}</td>
+    const simCell=sim.length?sim.map(b=>html`<span onclick="showDet(${b.id})" title="${b.titre}" style="display:inline-block;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#eff6ff;color:#1d4ed8;border-radius:5px;padding:2px 7px;font-size:11px;cursor:pointer;margin:1px;vertical-align:middle">${b.titre.length>20?b.titre.substring(0,20)+'…':b.titre}</span>`).join(' '):'<span style="color:var(--g400)">—</span>';
+    return html`<tr><td style="color:var(--g400)">#${r.id}</td>
       <td style="font-weight:600;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.titre}</td>
       <td>${r.auteur||'—'}</td><td style="font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.desc||'—'}</td>
       <td>${u?u.prenom+' '+u.nom:'—'}</td>
       <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic;font-size:12px;color:var(--gd)">${r.motif||'—'}</td>
       <td style="min-width:120px">${simCell}</td>
-      <td>${sBdg(r.status)}</td>
+      <td>${safe(sBdg(r.status))}</td>
       <td><input class="fi fi-l" value="${r.note||''}" placeholder="Commentaire…" style="padding:6px 10px;font-size:12px;min-width:120px" onchange="updN(${r.id},this.value)"/></td>
       <td><select class="fi fi-l" style="padding:5px 8px;font-size:12px;width:auto" onchange="chgSt(${r.id},this.value,'adm')">
         <option value="pending" ${r.status==='pending'?'selected':''}>⏳ En attente</option>
@@ -2653,7 +2649,7 @@ function rAdmUs(){
     /* Chercher si ce membre existe mais est filtré */
     const totalHidden=users.length-filteredUsers.length;
     const filterHint=admUsFilter!=='all'?`<br><button type="button" class="btn bo btn-sm" style="margin-top:8px" onclick="setAdmUsFilter('all')">Afficher tous les ${users.length} comptes</button>`:'';
-    tb.innerHTML=`<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--g400)">Aucun membre pour ce filtre.${filterHint}</td></tr>`;return;
+    tb.innerHTML=html`<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--g400)">Aucun membre pour ce filtre.${filterHint}</td></tr>`;return;
   }
   /* Bandeau d'avertissement si des comptes sont cachés par le filtre */
   const hiddenCount=users.length-filteredUsers.length;
@@ -2661,7 +2657,7 @@ function rAdmUs(){
   if(hiddenWarnEl){
     if(hiddenCount>0&&admUsFilter!=='all'){
       hiddenWarnEl.style.display='block';
-      hiddenWarnEl.innerHTML=`⚠️ <strong>${hiddenCount} compte(s)</strong> masqué(s) par le filtre "<em>${admUsFilter}</em>". 
+      hiddenWarnEl.innerHTML=html`⚠️ <strong>${hiddenCount} compte(s)</strong> masqué(s) par le filtre "<em>${admUsFilter}</em>". 
         <button type="button" class="btn bo btn-xs" onclick="setAdmUsFilter('all')">Tout afficher</button>
         &nbsp;<span style="font-size:12px;color:var(--g500)">Si vous ne trouvez pas un compte, cliquez sur "Tout afficher".</span>`;
     }else{hiddenWarnEl.style.display='none';}
@@ -2671,23 +2667,23 @@ function rAdmUs(){
     const expired=u.propUntil&&new Date()>new Date(u.propUntil+'T23:59:59');
     const propActive=u.canPropose&&!expired;
     const showCode=(u.role!=='admin')||(curUser&&u.id==curUser.id);
-    return `<tr class="${u.disabled?'user-disabled':''}">
+    return html`<tr class="${u.disabled?'user-disabled':''}">
       <td>
         <div style="display:flex;align-items:center;gap:8px">
-          ${u.photoB64?`<img src="${u.photoB64}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--g200)"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--g500);flex-shrink:0">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>`}
-          ${showCode?`<code class="pl">${u.abbrev}</code>`:`<span style="color:var(--g400);font-size:12px;font-style:italic">🔒</span>`}
+          ${safe(u.photoB64?`<img src="${u.photoB64}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--g200)"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--g500);flex-shrink:0">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>`)}
+          ${safe(showCode?html`<code class="pl">${u.abbrev}</code>`:`<span style="color:var(--g400);font-size:12px;font-style:italic">🔒</span>`)}
         </div>
       </td>
       <td style="font-weight:500">${u.prenom} ${u.nom}</td>
-      <td>${rBdg(u.role)}</td>
-      <td>${u.disabled?'<span class="badge bdis">🚫 Désactivé</span>':'<span class="badge bavl">✅ Actif</span>'}</td>
+      <td>${safe(rBdg(u.role))}</td>
+      <td>${safe(u.disabled?'<span class="badge bdis">🚫 Désactivé</span>':'<span class="badge bavl">✅ Actif</span>')}</td>
       <td>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
           <label class="tgl"><input type="checkbox" ${u.canPropose?'checked':''} onchange="togP(${u.id},this.checked)"/><span class="ts"></span></label>
           <span style="font-size:12px;color:${propActive?'var(--gd)':gO?'var(--green)':'var(--g400)'}">${propActive?'Oui':'Non'}</span>
         </div>
         <div style="font-size:11px;color:var(--g400)">📅 ${u.propUntil?'Expire le '+u.propUntil:'Permanent'}</div>
-        ${(()=>{
+        ${safe((()=>{
           if(!u.expiresAt)return'';
           const today=new Date().toISOString().split('T')[0];
           const daysLeft=Math.ceil((new Date(u.expiresAt)-new Date(today))/(86400*1000));
@@ -2695,21 +2691,21 @@ function rAdmUs(){
           if(daysLeft<=30)return'<div style="font-size:11px;color:#d97706;margin-top:2px">⏳ Expire bientôt : '+u.expiresAt+' ('+daysLeft+'j)</div>';
           if(daysLeft<=60)return'<div style="font-size:11px;color:#d97706;margin-top:2px">🟠 Expire le '+u.expiresAt+'</div>';
           return'<div style="font-size:11px;color:#16a34a;margin-top:2px">🟢 Valide jusqu&#39;au '+u.expiresAt+'</div>';
-        })()}
+        })())}
       </td>
       <td><div style="display:flex;gap:5px;flex-wrap:wrap">
         <button type="button" class="btn bo btn-xs" onclick="openUM(${u.id})">✏️</button>
         <button type="button" class="btn bn btn-xs" onclick="showCard(${u.id})" title="Carte membre">🪪</button>
-        ${u.whatsapp?`<button type="button" class="btn btn-xs" style="background:#dcfce7;color:#15803d" onclick="shareAccess(${u.id})" title="Partager les accès via WhatsApp">📤 Partager</button>`:''}
+        ${safe(u.whatsapp?`<button type="button" class="btn btn-xs" style="background:#dcfce7;color:#15803d" onclick="shareAccess(${u.id})" title="Partager les accès via WhatsApp">📤 Partager</button>`:'')}
         <button type="button" class="btn ${u.disabled?'bg':'bwarn'} btn-xs" onclick="togDisable(${u.id})">${u.disabled?'✅ Réactiver':'🚫 Désactiver'}</button>
-        ${u.role==='admin'&&countAdmins()<=1
+        ${safe(u.role==='admin'&&countAdmins()<=1
           ?`<button class="btn btn-xs" style="background:var(--g200);color:var(--g400);cursor:not-allowed" title="Dernier admin">🔒</button>`
-          :`<button type="button" class="btn bd btn-xs" onclick="delU(${u.id})">🗑️</button>`}
+          :`<button type="button" class="btn bd btn-xs" onclick="delU(${u.id})">🗑️</button>`)}
       </div></td>
     </tr>`;
     }catch(renderErr){
       console.error('[rAdmUs] Erreur rendu user id='+u.id+' abbrev='+u.abbrev,renderErr);
-      return `<tr style="background:#fff5f5"><td colspan="6" style="padding:8px 12px;font-size:12px;color:#dc2626">
+      return html`<tr style="background:#fff5f5"><td colspan="6" style="padding:8px 12px;font-size:12px;color:#dc2626">
         ⚠️ Erreur d'affichage du compte <b>${u.abbrev||'?'}</b> (ID:${u.id}) — <button type="button" class="btn bo btn-xs" onclick="openUM(${u.id})">Ouvrir quand même</button>
       </td></tr>`;
     }
@@ -2777,7 +2773,7 @@ function openGuide(){
   ov.id='_guide_modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  const capsHtml=caps.map(c=>`
+  const capsHtml=caps.map(c=>html`
     <div style="display:flex;gap:13px;padding:14px;background:#f8fafc;border-radius:11px;border:0.5px solid #e8edf2">
       <div style="font-size:22px;flex-shrink:0;line-height:1.2">${c.icon}</div>
       <div>
@@ -2785,7 +2781,7 @@ function openGuide(){
         <div style="font-size:13px;color:#64748b;line-height:1.5">${c.desc}</div>
       </div>
     </div>`).join('');
-  ov.innerHTML=`<div style="background:white;border-radius:16px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)">
+  ov.innerHTML=html`<div style="background:white;border-radius:16px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)">
     <div style="background:linear-gradient(135deg,#1c4370,#2a5a8f);color:white;padding:24px 22px;border-radius:16px 16px 0 0;position:relative">
       <button onclick="document.getElementById('_guide_modal').remove()" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,.18);border:none;border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:16px;color:white;display:flex;align-items:center;justify-content:center">✕</button>
       <div style="font-size:20px;font-weight:700;margin-bottom:6px">❓ Guide d'utilisation</div>
@@ -2849,7 +2845,7 @@ function applyLogo(b64){
   const wrap=document.getElementById('login-logo-wrap');
   const ico=document.getElementById('login-ico-emoji');
   if(wrap&&b64){
-    wrap.innerHTML=`<img src="${b64}" class="llogo-img" alt="Logo"/>`;
+    wrap.innerHTML=html`<img src="${b64}" class="llogo-img" alt="Logo"/>`;
   } else if(ico){
     if(wrap)wrap.innerHTML='<div class="lico" id="login-ico-emoji">📚</div>';
   }
@@ -2906,7 +2902,7 @@ function onMbrPhoto(input){
       canvas.getContext('2d').drawImage(img,0,0,w,ht);
       ufPhotoB64=canvas.toDataURL('image/png',0.9);
       const prev=document.getElementById('uf-photo-prev');
-      if(prev)prev.innerHTML=`<img src="${ufPhotoB64}" style="width:100%;height:100%;object-fit:cover"/>`;
+      if(prev)prev.innerHTML=html`<img src="${ufPhotoB64}" style="width:100%;height:100%;object-fit:cover"/>`;
     };
     img.src=e.target.result;
   };
@@ -2924,7 +2920,7 @@ function showCard(id){
   const logoHtml=cfg.logoB64
     ?`<img src="${cfg.logoB64}" style="height:40px;width:40px;object-fit:contain;border-radius:8px"/>`
     :`<div style="width:40px;height:40px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px">📚</div>`;
-  document.getElementById('m-card-body').innerHTML=`
+  document.getElementById('m-card-body').innerHTML=html`
     <div style="background:linear-gradient(135deg,#1C4370 0%,#22806B 100%);border-radius:16px;padding:28px;color:white;font-family:'DM Sans',sans-serif">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px;opacity:.8;font-size:13px;font-weight:600;letter-spacing:.5px">
         ${logoHtml}
@@ -2934,7 +2930,7 @@ function showCard(id){
         ${photoHtml}
         <div style="flex:1">
           <div style="font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;line-height:1.2;margin-bottom:4px">${u.prenom} ${u.nom.toUpperCase()}</div>
-          <div style="margin-bottom:12px">${rBdg(u.role)}</div>
+          <div style="margin-bottom:12px">${safe(rBdg(u.role))}</div>
           ${u.profession?`<div style="font-size:13px;opacity:.85;margin-bottom:4px">💼 ${u.profession}</div>`:''}
           ${u.commune?`<div style="font-size:13px;opacity:.85;margin-bottom:4px">📍 ${u.commune}</div>`:''}
           ${u.whatsapp?`<div style="font-size:13px;opacity:.85">📱 ${u.whatsapp}</div>`:''}
@@ -2988,10 +2984,20 @@ async function downloadCard(){
 }
 function genCode(){
   const chars='abcdefghjkmnpqrstuvwxyz23456789';
+  const arr=new Uint8Array(4);
   let code='';
-  do{code='';for(let i=0;i<4;i++)code+=chars[Math.floor(Math.random()*chars.length)];}
-  while(users.some(u=>u.abbrev===code));
+  do{
+    crypto.getRandomValues(arr);
+    code=Array.from(arr).map(b=>chars[b%chars.length]).join('');
+  }while(users.some(u=>u.abbrev===code));
   return code;
+}
+function saGenSpaceCode(){
+  /* UUID cryptographique tronqué : 3 segments de 4 hex = 12 chars imprévisibles */
+  const arr=new Uint8Array(6);
+  crypto.getRandomValues(arr);
+  const hex=Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
+  return hex.slice(0,4)+'-'+hex.slice(4,8)+'-'+hex.slice(8,12);
 }
 function togNeverExpires(checked){
   const expEl=document.getElementById('ufexp');
@@ -3109,14 +3115,14 @@ async function savU(){if(!_requirePrivileged('savU'))return;
         wa=document.getElementById('ufwa').value.trim(),
         com=document.getElementById('ufcom').value.trim();
   if(!ab||!pn||!nm){document.getElementById('ufe').textContent='Tous les champs * sont obligatoires.';return;}
-  /* Vérif unicité code — d'abord en mémoire, puis Firebase pour les nouveaux */
+  /* Vérif unicité code — d'abord en mémoire, puis Supabase pour les nouveaux */
   const abConflict=users.find(u=>u.abbrev===ab&&u.id!==ufEid);
   if(abConflict){
     const today=todayStr();
     const st=abConflict.disabled?'🔴 Désactivé'
       :(abConflict.expiresAt&&abConflict.expiresAt<today&&!abConflict.neverExpires)?'🟡 Expiré ('+abConflict.expiresAt+')'
       :'🟢 Actif';
-    document.getElementById('ufe').innerHTML=`Code "<b>${ab}</b>" déjà utilisé par :
+    document.getElementById('ufe').innerHTML=html`Code "<b>${ab}</b>" déjà utilisé par :
       <span style="display:block;margin:6px 0;padding:8px 10px;background:#f8fafc;border-radius:6px;font-size:12px">
         <b>${abConflict.prenom} ${abConflict.nom}</b> · ${abConflict.role} · ${st}<br>
         <span style="color:#64748b">Si ce compte n'apparaît pas dans la liste, changez le filtre sur 
@@ -3156,7 +3162,7 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     try{await sbUpd('users',ufEid,updFields);}catch(e){console.error(e);alert('❌ Erreur de mise à jour : '+e.message);}
   } else {
     /* ── Création d'un nouveau compte ── */
-    /* 1. Lire le compteur frais depuis Firebase pour éviter les collisions entre sessions */
+    /* 1. Lire le compteur frais depuis Supabase pour éviter les collisions entre sessions */
     try{const d=await sbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
     const newId=_nextUserId();
     /* Rôles permanents : jamais d'expiration */
@@ -3167,18 +3173,18 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     try{
       /* 2. Sauvegarder le compteur EN PREMIER pour réserver l'ID */
       await sbSaveCounters();
-      /* 3. Sauvegarder l'utilisateur dans Firebase */
+      /* 3. Sauvegarder l'utilisateur dans Supabase */
       await sbSet('users',newId,nu);
-      /* 4. Seulement si Firebase confirme : ajouter au tableau local */
+      /* 4. Seulement si Supabase confirme : ajouter au tableau local */
       if(!users.find(u=>String(u.id)===String(newId)))users.push(nu);
     }catch(e){
-      console.error('[savU] Échec sauvegarde Firebase:',e);
+      console.error('[savU] Échec sauvegarde Supabase:',e);
       alert('❌ Erreur de sauvegarde : '+e.message+'\n\nLe compte n\'a pas été créé. Vérifiez votre connexion et réessayez.');
       return;
     }
   }
   cM('mus');
-  /* Recharger les users depuis Firebase pour confirmer la persistance */
+  /* Recharger les users depuis Supabase pour confirmer la persistance */
 }
 async function delU(id){if(!_requireAdmin('delU'))return;
   const u=users.find(x=>x.id==id);if(!u)return;
@@ -3229,7 +3235,7 @@ async function delU(id){if(!_requireAdmin('delU'))return;
 }
 function rAdmDelUs(){
   const tb=document.getElementById('del-utb');if(!tb)return;
-  /* Chargement à la demande — évite les lectures Firebase au démarrage */
+  /* Chargement à la demande — évite les lectures Supabase au démarrage */
   if(!deletedUsers.length){
     sbGetAll('deletedUsers').then(delD=>{
       deletedUsers=delD.sort((a,b)=>String(b.deletedAt||'').localeCompare(String(a.deletedAt||'')));
@@ -3249,10 +3255,10 @@ function _rAdmDelUsRender(){
     tb.innerHTML=`<tr><td colspan="5" style="text-align:center;padding:28px;color:var(--g400)">Aucun membre supprimé.</td></tr>`;
     return;
   }
-  tb.innerHTML=deletedUsers.map(u=>`<tr>
+  tb.innerHTML=deletedUsers.map(u=>html`<tr>
     <td><code class="pl">${u.abbrev}</code></td>
     <td style="font-weight:500">${u.prenom} ${u.nom}</td>
-    <td>${rBdg(u.role)}</td>
+    <td>${safe(rBdg(u.role))}</td>
     <td style="font-size:12px;color:var(--g500)">${u.deletedAt||'—'}</td>
     <td style="font-size:12px;color:var(--g500)">${u.deletedBy||'—'}</td>
   </tr>`).join('');
@@ -3260,7 +3266,7 @@ function _rAdmDelUsRender(){
 
 async function clearDeletedUsers(){
   if(!deletedUsers.length){alert('La liste est déjà vide.');return;}
-  if(!confirm('Vider définitivement la liste des '+deletedUsers.length+' membre(s) supprimé(s) ?\n\nCette action supprime les archives de Firebase. Elle est irréversible.'))return;
+  if(!confirm('Vider définitivement la liste des '+deletedUsers.length+' membre(s) supprimé(s) ?\n\nCette action supprime les archives. Elle est irréversible.'))return;
   let ok=0,fail=0;
   for(const u of deletedUsers){
     try{await sbDel('deletedUsers',u.id);ok++;}
@@ -3325,7 +3331,7 @@ function rCatAccessPanel(){
     <tbody>${roles.map(r=>{
       const hasAcad=(access[r]||[]).includes('academique');
       const hasSpir=(access[r]||[]).includes('spirituel');
-      return `<tr>
+      return html`<tr>
         <td style="font-weight:600">${roleLabels[r]||r}</td>
         <td style="text-align:center;vertical-align:middle">
           <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
@@ -3349,7 +3355,7 @@ function rCatAccessPanel(){
   if(statsEl){
     const acad=books.filter(b=>(b.catType||'academique')==='academique').length;
     const spir=books.filter(b=>b.catType==='spirituel').length;
-    statsEl.innerHTML=`
+    statsEl.innerHTML=html`
       <div class="stc stT" style="min-width:160px"><div class="sv" style="color:var(--navy)">${acad}</div><div class="sl">📚 Livres académiques</div></div>
       <div class="stc" style="border-color:#9333ea;min-width:160px"><div class="sv" style="color:#9333ea">${spir}</div><div class="sl">🕊️ Livres spirituels</div></div>`;
   }
@@ -3364,12 +3370,12 @@ function rCatAccessPanel(){
     const pages=Math.ceil(total/CAT_INDIV_PER)||1;
     if(catIndivPage>pages)catIndivPage=1;
     const slice=filtered.slice((catIndivPage-1)*CAT_INDIV_PER,catIndivPage*CAT_INDIV_PER);
-    indEl.innerHTML=slice.length?slice.map(u=>`<tr>
+    indEl.innerHTML=slice.length?slice.map(u=>html`<tr>
       <td><div style="display:flex;align-items:center;gap:8px">
         ${u.photoB64?`<img src="${u.photoB64}" style="width:28px;height:28px;border-radius:50%;object-fit:cover"/>`:`<div style="width:28px;height:28px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--g500)">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>`}
         <span style="font-weight:500">${u.prenom} ${u.nom}</span>
       </div></td>
-      <td>${rBdg(u.role)}</td>
+      <td>${safe(rBdg(u.role))}</td>
       <td style="text-align:center">
         <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
           ${u.canSeeSpiritual?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>':'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>'}
@@ -3385,7 +3391,7 @@ function rCatAccessPanel(){
       for(let p=1;p<=pages;p++){
         btns+=`<button onclick="catIndivPage=${p};rCatAccessPanel()" style="padding:4px 10px;border-radius:6px;border:1.5px solid ${p===catIndivPage?'var(--navy)':'var(--g200)'};background:${p===catIndivPage?'var(--navy)':'white'};color:${p===catIndivPage?'white':'var(--g600)'};font-size:12px;cursor:pointer;font-family:inherit">${p}</button>`;
       }
-      pgnEl.innerHTML=`<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--g400)">${total} membre(s)</span>${btns}</div>`;
+      pgnEl.innerHTML=html`<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--g400)">${total} membre(s)</span>${btns}</div>`;
     }
   }
 }
@@ -3400,7 +3406,7 @@ async function toggleCatAccess(role,type,v){
   if(!cfg.catAccess[role])cfg.catAccess[role]=['academique'];
   if(v){if(!cfg.catAccess[role].includes(type))cfg.catAccess[role].push(type);}
   else{cfg.catAccess[role]=cfg.catAccess[role].filter(x=>x!==type);}
-  /* Re-rendre immédiatement — ne pas attendre le snapshot Firebase */
+  /* Re-rendre immédiatement — ne pas attendre le realtime Supabase */
   rCatAccessPanel();
   try{await sbSaveCfg();}catch(e){console.warn('[toggleCatAccess]',e);}
 }
@@ -3651,7 +3657,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
   }catch(e){
     console.error('[Diag]',e);
     const listEl=document.getElementById('diag-list');
-    if(listEl)listEl.innerHTML=`<div style="padding:24px;color:#dc2626">Erreur lors de l'analyse : ${e.message}</div>`;
+    if(listEl)listEl.innerHTML=html`<div style="padding:24px;color:#dc2626">Erreur lors de l'analyse : ${e.message}</div>`;
   }finally{
     if(btn){btn.disabled=false;btn.textContent='▶ Relancer l\'analyse';}
   }
@@ -3675,7 +3681,7 @@ function _renderDiag(anomalies,filter){
     {v:warnings.length,l:'Avertissements',c:'#d97706',bg:'#fef3c7'},
     {v:infos.length,l:'Informations',c:'#2563eb',bg:'#eff6ff'},
     {v:score+'%',l:'Score santé',c:score>=90?'#16a34a':score>=70?'#d97706':'#dc2626',bg:score>=90?'#dcfce7':score>=70?'#fef3c7':'#fee2e2'},
-  ].map(k=>`<div style="background:${k.bg};border-radius:10px;padding:14px 16px">
+  ].map(k=>html`<div style="background:${k.bg};border-radius:10px;padding:14px 16px">
     <div style="font-size:26px;font-weight:500;color:${k.c};line-height:1.1;margin-bottom:4px">${k.v}</div>
     <div style="font-size:12px;color:${k.c};opacity:.75">${k.l}</div>
   </div>`).join('');
@@ -3690,7 +3696,7 @@ function _renderDiag(anomalies,filter){
     {id:'sessions',label:'Sessions'},
   ];
   const filtersEl=document.getElementById('diag-filters');
-  if(filtersEl) filtersEl.innerHTML=cats.map(c=>`
+  if(filtersEl) filtersEl.innerHTML=cats.map(c=>html`
     <button type="button" onclick="_applyDiagFilter('${c.id}')"
       style="padding:5px 12px;border-radius:20px;font-size:12px;border:0.5px solid var(--g200);
         background:${_diagFilter===c.id?'var(--navy)':'white'};
@@ -3737,10 +3743,10 @@ function _renderDiag(anomalies,filter){
       Voir les éléments ▾
     </button>`:'';
     const preview=hasItems?`<div id="${detailId}" style="display:none;margin-top:10px;background:rgba(0,0,0,.03);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--g600);max-height:180px;overflow-y:auto">
-      ${a.items.slice(0,20).map(it=>it.titre||it.prenom&&(it.prenom+' '+it.nom)||it.bookTitle||it.id||'—').map(s=>`<div style="padding:3px 0;border-bottom:0.5px solid var(--g100)">${s}</div>`).join('')}
+      ${a.items.slice(0,20).map(it=>it.titre||it.prenom&&(it.prenom+' '+it.nom)||it.bookTitle||it.id||'—').map(s=>html`<div style="padding:3px 0;border-bottom:0.5px solid var(--g100)">${s}</div>`).join('')}
       ${a.items.length>20?`<div style="padding:4px 0;color:var(--g400)">… et ${a.items.length-20} autre(s)</div>`:''}
     </div>`:'';
-    return `<div style="background:white;border:0.5px solid var(--g200);border-left:3px solid ${lc.border};
+    return html`<div style="background:white;border:0.5px solid var(--g200);border-left:3px solid ${lc.border};
         border-radius:0 10px 10px 0;padding:14px 16px;display:flex;align-items:flex-start;gap:12px">
       <div style="width:30px;height:30px;border-radius:8px;background:${lc.bg};color:${lc.text};
         display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${lc.icon}</div>
@@ -3771,7 +3777,7 @@ function toggleDiagDetail(id){
 async function _fixDiagItem(idx){
   const a=_diagAnomCache[idx];
   if(!a||!a.fix)return;
-  if(!confirm('Appliquer la correction automatique pour "'+a.title+'" ?\n\nCette action modifie les données Firebase et est irréversible.'))return;
+  if(!confirm('Appliquer la correction automatique pour "'+a.title+'" ?\n\nCette action modifie les données Supabase et est irréversible.'))return;
   try{
     const btn=document.querySelector(`[onclick="_fixDiagItem(${idx})"]`);
     if(btn){btn.disabled=true;btn.textContent='⏳ Correction…';}
@@ -3793,7 +3799,7 @@ function openPubRegister(){
   ov.id='_pub_reg_modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:white;border-radius:16px;width:100%;max-width:440px;max-height:94vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)">
+  ov.innerHTML=html`<div style="background:white;border-radius:16px;width:100%;max-width:440px;max-height:94vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)">
     <div style="background:#1c4370;color:white;padding:22px 20px;border-radius:16px 16px 0 0">
       <div style="font-size:18px;font-weight:700;margin-bottom:4px">✍️ Demande d'inscription</div>
       <div style="font-size:13px;opacity:.85">Remplissez ce formulaire pour rejoindre la bibliothèque</div>
@@ -3855,7 +3861,7 @@ function _showRegSuccess(prenom){
   const place=_pubMeeting?.place||'';
   const time=_pubMeeting?.time||'';
   const card=modal.querySelector('div');
-  card.innerHTML=`
+  card.innerHTML=html`
     <div style="padding:32px 24px;text-align:center">
       <div style="width:64px;height:64px;border-radius:50%;background:#dcfce7;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 16px">✅</div>
       <div style="font-size:19px;font-weight:700;color:#1e293b;margin-bottom:8px">Demande envoyée, ${prenom} !</div>
@@ -3886,10 +3892,10 @@ async function _loadPubCat(){
     let msg='';let detail='';
     if(e.message.includes('UNAUTHENTICATED')||e.message.includes('401')){
       msg='Accès non autorisé';
-      detail='Les règles Firestore n\'autorisent pas les lectures anonymes.<br>Activez l\'<strong>Authentification anonyme</strong> dans Firebase Console → Authentication → Sign-in method.';
+      detail='Accès refusé par les règles RLS de Supabase.<br>Vérifiez que la politique <code>allow_all</code> est bien activée sur la table <code>books</code>.';
     }else if(e.message.includes('PERMISSION_DENIED')||e.message.includes('403')){
       msg='Permission refusée';
-      detail='Les règles de sécurité Firestore bloquent l\'accès public au catalogue.<br>Ajoutez une règle <code>allow read: if request.auth != null;</code> pour les livres.';
+      detail='Les règles RLS Supabase bloquent l\'accès public au catalogue.<br>Vérifiez la politique <code>allow_all</code> sur la table <code>books</code>.';
     }else if(e.message.includes('fetch')||e.message.includes('network')||e.message.includes('Failed')){
       msg='Erreur réseau';
       detail='Vérifiez votre connexion internet.';
@@ -3897,7 +3903,7 @@ async function _loadPubCat(){
       msg='Erreur de chargement';
       detail=e.message;
     }
-    if(grid)grid.innerHTML=`<div style="grid-column:1/-1;text-align:center;padding:48px 20px">
+    if(grid)grid.innerHTML=html`<div style="grid-column:1/-1;text-align:center;padding:48px 20px">
       <div style="font-size:32px;margin-bottom:12px">⚠️</div>
       <div style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:8px">${msg}</div>
       <div style="font-size:13px;color:var(--g500);line-height:1.6;max-width:400px;margin:0 auto">${detail}</div>
@@ -3917,7 +3923,7 @@ async function _loadPubCat(){
   /* Peupler la datalist catégories */
   const cats=[...new Set(_pubBooks.map(b=>b.cat).filter(Boolean))].sort();
   const dl=document.getElementById('pub-dl-cat');
-  if(dl)dl.innerHTML=cats.map(c=>`<option value="${c}"></option>`).join('');
+  if(dl)dl.innerHTML=cats.map(c=>html`<option value="${c}"></option>`).join('');
 
   /* Mettre à jour les liens Se connecter */
   const loginUrl=window.location.href.replace('/book/'+SPACE_ID,'/'+SPACE_ID);
@@ -3952,15 +3958,15 @@ function rPubCat(){
   }
   grid.innerHTML=page.map(b=>{
     const avail=b.status==='available';
-    return `<div class="bc" onclick="showPubDet(${b.id})" style="cursor:pointer;${!avail?'opacity:.75':''}">
+    return html`<div class="bc" onclick="showPubDet(${b.id})" style="cursor:pointer;${!avail?'opacity:.75':''}">
       <div class="bcv" style="background:${cg(b.cat)}">${b.emoji||'📖'}</div>
       <div class="bi">
         <div class="btt" title="${b.titre}">${b.titre}</div>
         <div class="bau">${b.auteur||'—'}</div>
         <div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap">
           <span style="font-size:11px;background:var(--g100);color:var(--g500);padding:2px 7px;border-radius:10px">${b.cat||'Général'}</span>
-          ${!avail?`<span style="font-size:11px;background:#ede9fe;color:#7c3aed;padding:2px 7px;border-radius:10px">📖 Emprunté</span>`:
-          `<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:2px 7px;border-radius:10px">✅ Disponible</span>`}
+          ${safe(!avail?`<span style="font-size:11px;background:#ede9fe;color:#7c3aed;padding:2px 7px;border-radius:10px">📖 Emprunté</span>`:
+          `<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:2px 7px;border-radius:10px">✅ Disponible</span>`)}
         </div>
       </div>
     </div>`;
@@ -4019,7 +4025,7 @@ function _renderPubFilters(){
             style="${base};padding:0 32px 0 36px;-webkit-appearance:none;appearance:none;cursor:pointer"
             onfocus="${focusSty}" onblur="${blurSty}">
             <option value="">Toutes catégories</option>
-            ${cats.map(c=>`<option value="${c}">${c}</option>`).join('')}
+            ${cats.map(c=>html`<option value="${c}">${c}</option>`).join('')}
           </select>
           <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:#94a3b8;fill:none;pointer-events:none" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round">
             <path d="M6 9l6 6 6-6"/>
@@ -4040,7 +4046,7 @@ function _renderPubContact(number,name){
   const banner=document.createElement('div');
   banner.id='pub-contact-banner';
   banner.style.cssText='margin:8px 16px 32px;padding:18px;background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1px solid #bfdbfe;border-radius:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap';
-  banner.innerHTML=`
+  banner.innerHTML=html`
     <div style="width:46px;height:46px;border-radius:12px;background:#0ea5e9;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">💬</div>
     <div style="flex:1;min-width:160px">
       <div style="font-size:15px;font-weight:700;color:#0c4a6e;margin-bottom:2px">Besoin de plus d'informations ?</div>
@@ -4065,7 +4071,7 @@ function showPubDet(id){
   ov.id='_pub_modal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:white;border-radius:16px;width:100%;max-width:440px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.25)">
+  ov.innerHTML=html`<div style="background:white;border-radius:16px;width:100%;max-width:440px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.25)">
     <!-- En-tête -->
     <div style="background:${cg(b.cat)||'#eff6ff'};padding:28px 20px 22px;text-align:center;position:relative">
       <button onclick="document.getElementById('_pub_modal').remove()" style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,.12);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:15px;color:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>
@@ -4180,7 +4186,7 @@ function rLoginLog(){
     sbGetAll('loginLog').then(logD=>{
       loginLog=logD.sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,300);
       _rLoginLogRender();
-    }).catch(e=>{tb.innerHTML=`<tr><td colspan="7" style="color:#dc2626;padding:16px">Erreur : ${e.message}</td></tr>`;});
+    }).catch(e=>{tb.innerHTML=html`<tr><td colspan="7" style="color:#dc2626;padding:16px">Erreur : ${e.message}</td></tr>`;});
     return;
   }
   _rLoginLogRender();
@@ -4189,14 +4195,14 @@ function _rLoginLogRender(){
   const tb=document.getElementById('log-tb');if(!tb)return;
   const lg_cnt=document.getElementById('log-count');if(lg_cnt)lg_cnt.textContent=loginLog.length+' connexion(s) enregistrée(s)';
   if(!loginLog.length){tb.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--g400)">Aucune connexion.</td></tr>`;return;}
-  tb.innerHTML=loginLog.map(l=>`<tr class="${l.role==='admin'?'log-row-admin':''}">
+  tb.innerHTML=loginLog.map(l=>html`<tr class="${l.role==='admin'?'log-row-admin':''}">
     <td style="color:var(--g400)">${l.id}</td>
-    <td style="font-weight:500">${l.name}</td>
-    <td>${rBdg(l.role)}</td>
-    <td style="white-space:nowrap">${l.date}</td>
-    <td style="white-space:nowrap">${l.time}</td>
-    <td style="white-space:nowrap">${l.device}</td>
-    <td>${l.browser}</td>
+    <td style="font-weight:500">${esc(l.name)}</td>
+    <td>${safe(rBdg(l.role))}</td>
+    <td style="white-space:nowrap">${esc(l.date)}</td>
+    <td style="white-space:nowrap">${esc(l.time)}</td>
+    <td style="white-space:nowrap">${esc(l.device)}</td>
+    <td>${esc(l.browser)}</td>
   </tr>`).join('');
 }
 async function clearLog(){
@@ -4248,7 +4254,7 @@ async function _testsData(){
   res.push(_tr(admins.length>0,'Au moins un administrateur',`${admins.length} administrateur(s)`));
   const adminBadConf=admins.filter(u=>!u.neverExpires||u.expiresAt||u.disabled);
   res.push(_tr(!adminBadConf.length,'Admins : configuration permanente',adminBadConf.length?'Compte(s) mal configuré(s) : '+adminBadConf.map(u=>u.abbrev).join(', '):'Tous permanents et actifs'));
-  res.push(_tr(!!(cfg.contactNumber),'Config : numéro de contact',cfg.contactNumber||'Non renseigné',!cfg.contactNumber));
+  res.push(_tr(!!(cfg.contact),'Config : numéro de contact',cfg.contact||'Non renseigné',!cfg.contact));
   res.push(_tr(!!(cfg.meetingPlace&&cfg.meetingTime),'Config : lieu et heure RDV',cfg.meetingPlace&&cfg.meetingTime?cfg.meetingPlace+' — '+cfg.meetingTime:'Non renseigné',!(cfg.meetingPlace&&cfg.meetingTime)));
   const pending=registrations.filter(r=>r.status==='pending');
   res.push(_tr(true,'Inscriptions en attente',`${pending.length} demande(s)`,pending.length>0));
@@ -4256,7 +4262,7 @@ async function _testsData(){
   return res;
 }
 
-async function _testsFirebase(){
+async function _testsSupabase(){
   const res=[];
   _initSb();
   res.push(_tr(!!sb,'Supabase client : initialisé',sb?'Client prêt (anon key OK)':'Échec init'));
@@ -4364,7 +4370,7 @@ function tpFindUser(){
   /* Chercher dans users[] sans aucun filtre */
   const found=users.filter(u=>(u.abbrev||'').toLowerCase()===code||String(u.id)===code);
   if(!found.length){
-    out.innerHTML=`<div style="padding:12px;background:#fee2e2;border-radius:8px;font-size:13px;color:#991b1b">
+    out.innerHTML=html`<div style="padding:12px;background:#fee2e2;border-radius:8px;font-size:13px;color:#991b1b">
       ❌ Aucun compte trouvé avec le code "<b>${code}</b>" dans la mémoire locale (${users.length} comptes chargés).
       <br><br>Vérifiez que les données sont bien chargées (voir l'indicateur de sync en haut).
     </div>`;
@@ -4374,14 +4380,14 @@ function tpFindUser(){
   out.innerHTML=found.map(u=>{
     const st=u.disabled?'🔴 Désactivé':(u.neverExpires||!u.expiresAt)?'🟢 Permanent':(u.expiresAt<today)?'🟡 Expiré ('+u.expiresAt+')':'🟢 Actif (expire '+u.expiresAt+')';
     const fields=[
-      ['ID Firebase',u.id],['Code (abbrev)',u.abbrev],['Rôle',u.role],
+      ['ID',u.id],['Code (abbrev)',u.abbrev],['Rôle',u.role],
       ['neverExpires',String(!!u.neverExpires)],['expiresAt',u.expiresAt||'(null)'],
       ['disabled',String(!!u.disabled)],['Prénom/Nom',u.prenom+' '+u.nom],
     ];
-    return `<div style="background:white;border:0.5px solid var(--g200);border-radius:10px;padding:14px;font-size:13px">
+    return html`<div style="background:white;border:0.5px solid var(--g200);border-radius:10px;padding:14px;font-size:13px">
       <div style="font-weight:600;color:var(--navy);margin-bottom:8px;font-size:14px">${u.prenom} ${u.nom} — ${st}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px">
-        ${fields.map(([k,v])=>`<div><span style="color:var(--g400)">${k} :</span> <b>${v}</b></div>`).join('')}
+        ${safe(fields.map(([k,v])=>html`<div><span style="color:var(--g400)">${k} :</span> <b>${v}</b></div>`).join(''))}
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="btn bn btn-sm" onclick="openUM(${u.id})">✏️ Modifier ce compte</button>
@@ -4399,8 +4405,8 @@ async function runTestPanel(){
   resultsEl.innerHTML='<div style="text-align:center;padding:48px;color:var(--g400)"><div style="font-size:32px;margin-bottom:12px">⏳</div><div>Execution des tests...</div></div>';
   const t0=Date.now();let allResults=[];const groups=[];
   const runGroup=async(title,sub,fn)=>{try{const r=await fn();groups.push({title,sub,results:r});allResults.push(...r);}catch(e){const r=[_tr(false,'Erreur',e.message)];groups.push({title,sub,results:r});allResults.push(...r);}};
-  await runGroup('Données locales','Analyse en mémoire — 0 lecture Firebase',_testsData);
-  await runGroup('Firebase','~3 lectures + 1 écriture test supprimée immédiatement',_testsFirebase);
+  await runGroup('Données locales','Analyse en mémoire — 0 lecture Supabase',_testsData);
+  await runGroup('Supabase','~3 lectures + 1 écriture test supprimée immédiatement',_testsSupabase);
   await runGroup('Page publique','Accessibilité et catalogue',_testsPublic);
   const elapsed=((Date.now()-t0)/1000).toFixed(1);
   const passed=allResults.filter(r=>r.ok).length;
@@ -4424,9 +4430,9 @@ async function runTestPanel(){
         <div style="font-size:12px;color:var(--g400)">${g.results.filter(r=>r.ok).length}/${g.results.length}</div>
       </div>
       ${g.results.map(r=>{const ic=r.ok?(r.warn?'⚠️':'✅'):'❌';const bg=r.ok?(r.warn?'#fffbeb':'white'):'#fff5f5';const tc=r.ok?(r.warn?'#92400e':'#1e293b'):'#991b1b';
-        return `<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);background:${bg};display:flex;align-items:flex-start;gap:10px">
+        return html`<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);background:${bg};display:flex;align-items:flex-start;gap:10px">
           <span style="font-size:14px;flex-shrink:0">${ic}</span>
-          <div><div style="font-size:13px;font-weight:500;color:${tc}">${r.label}</div>${r.detail?`<div style="font-size:12px;color:var(--g500);margin-top:2px">${r.detail}</div>`:''}</div>
+          <div><div style="font-size:13px;font-weight:500;color:${tc}">${r.label}</div>${safe(r.detail?`<div style="font-size:12px;color:var(--g500);margin-top:2px">${r.detail}</div>`:'')}</div>
         </div>`;}).join('')}
     </div>`;
   }
@@ -4472,7 +4478,7 @@ function swT(t,b){
   }
 }
 
-/* ── Journal des modifications de livres (in-memory + Firebase) ── */
+/* ── Journal des modifications de livres (in-memory + Supabase) ── */
 function _logBookChange(bookId, bookTitle, changes){
   /* Stocker dans le livre lui-même (lastModified*) + dans un log global en mémoire */
   /* On évite une collection dédiée pour rester dans le quota — les données sont
@@ -4498,7 +4504,7 @@ function rAdmRegistrations(){
   let list=registrations.slice().sort((a,b)=>(b.submittedAt||'').localeCompare(a.submittedAt||''));
   if(_regFilter==='pending')list=list.filter(r=>r.status==='pending');
   if(!list.length){
-    el.innerHTML=`<div style="padding:40px;text-align:center;color:var(--g400);background:white;border:0.5px solid var(--g200);border-radius:12px">
+    el.innerHTML=html`<div style="padding:40px;text-align:center;color:var(--g400);background:white;border:0.5px solid var(--g200);border-radius:12px">
       <div style="font-size:32px;margin-bottom:10px">${_regFilter==='pending'?'✅':'📭'}</div>
       <div style="font-size:14px">${_regFilter==='pending'?'Aucune demande en attente':'Aucune inscription'}</div>
     </div>`;return;
@@ -4509,7 +4515,7 @@ function rAdmRegistrations(){
     const statusBadge=r.status==='pending'?'<span class="badge bpen">⏳ En attente</span>'
       :r.status==='approved'?'<span class="badge bapp">✅ Validée</span>'
       :'<span class="badge brej">❌ Rejetée</span>';
-    return `<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:16px">
+    return html`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:16px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:12px">
           <div style="width:44px;height:44px;border-radius:50%;background:var(--navy);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0">${((r.prenom[0]||'')+(r.nom[0]||'')).toUpperCase()}</div>
@@ -4518,15 +4524,15 @@ function rAdmRegistrations(){
             <div style="font-size:12px;color:var(--g400)">Demande du ${dt}</div>
           </div>
         </div>
-        ${statusBadge}
+        ${safe(statusBadge)}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:13px;color:var(--g600);margin-bottom:${r.status==='pending'?'14px':'0'}">
         <div>📱 <a href="https://wa.me/${wa}" target="_blank" style="color:#16a34a;text-decoration:none">${r.whatsapp||'—'}</a></div>
         <div>🏘️ ${r.commune||'—'}</div>
-        ${r.profession?`<div>💼 ${r.profession}</div>`:''}
-        ${r.email?`<div>✉️ ${r.email}</div>`:''}
+        ${safe(r.profession?`<div>💼 ${r.profession}</div>`:'')}
+        ${safe(r.email?`<div>✉️ ${r.email}</div>`:'')}
       </div>
-      ${r.status==='pending'?`
+      ${safe(r.status==='pending'?`
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:12px;border-top:0.5px solid var(--g100)">
         <select id="reg-role-${r.id}" class="fi fi-l" style="width:auto;padding:8px 12px;font-size:13px">
           <option value="member">👤 Membre</option>
@@ -4538,7 +4544,7 @@ function rAdmRegistrations(){
         <button type="button" class="btn bd btn-sm" onclick="rejectRegistration('${r.id}')">❌ Rejeter</button>
       </div>`:
       r.status==='approved'?`<div style="font-size:12px;color:#16a34a;padding-top:10px;border-top:0.5px solid var(--g100)">✅ Compte créé (${r.assignedRole||'membre'}) · code : <strong>${r.createdAbbrev||'—'}</strong></div>`:
-      `<div style="font-size:12px;color:#dc2626;padding-top:10px;border-top:0.5px solid var(--g100)">❌ Demande rejetée</div>`}
+      `<div style="font-size:12px;color:#dc2626;padding-top:10px;border-top:0.5px solid var(--g100)">❌ Demande rejetée</div>`)}
     </div>`;
   }).join('');
 }
@@ -4558,7 +4564,7 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
   const abbrev=_genAbbrev(reg.prenom,reg.nom);
   if(!confirm(`Créer le compte de ${reg.prenom} ${reg.nom} ?\n\nRôle : ${role}\nCode de connexion : ${abbrev}\n\nLe membre utilisera ce code pour se connecter.`))return;
 
-  /* 1. Compteur frais depuis Firebase pour éviter collisions entre sessions */
+  /* 1. Compteur frais depuis Supabase pour éviter collisions entre sessions */
   try{const d=await sbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
   const newId=_nextUserId();
   const neverExp=['resident','commission','admin'].includes(role);
@@ -4571,9 +4577,9 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
   try{
     /* 2. Réserver l'ID en sauvegardant le compteur EN PREMIER */
     await sbSaveCounters();
-    /* 3. Sauvegarder l'utilisateur dans Firebase */
+    /* 3. Sauvegarder l'utilisateur dans Supabase */
     await sbSet('users',newId,nu);
-    /* 4. Mettre à jour la demande dans Firebase EN PREMIER */
+    /* 4. Mettre à jour la demande dans Supabase EN PREMIER */
     const processedAt=new Date().toISOString();
     await sbUpd('registrations',id,{status:'approved',assignedRole:role,createdAbbrev:abbrev,createdUserId:newId,processedAt});
     /* 5. Seulement si TOUT réussit : mettre à jour l'état local */
@@ -4595,7 +4601,7 @@ async function rejectRegistration(id){if(!_requireAdmin('rejectRegistration'))re
   const processedAt=new Date().toISOString();
   try{
     await sbUpd('registrations',id,{status:'rejected',processedAt});
-    /* Local seulement si Firebase réussit */
+    /* Local seulement si Supabase réussit */
     reg.status='rejected';reg.processedAt=processedAt;
     rAdmRegistrations();
     _showSyncToast('Demande rejetée');
@@ -4609,7 +4615,7 @@ async function clearShelfHistory(){if(!_requireAdmin('clearShelfHistory'))return
   const toDelete=[...shelfChecks];
   shelfChecks=[];
   rAdmShelves();
-  /* Supprimer de Firebase */
+  /* Supprimer de Supabase */
   for(const c of toDelete){
     try{await sbDel('shelfChecks',c.id);}catch(e){console.warn('[clearShelfHistory]',c.id,e.message);}
   }
@@ -4670,18 +4676,18 @@ function rShelfMgrView(){
     const missing=booksHere.filter(b=>b.status==='missing').length;
     const alreadyToday=lastCheck&&lastCheck.checkedAt.startsWith(today);
     const lastDate=lastCheck?new Date(lastCheck.checkedAt).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'Jamais vérifiée';
-    return `<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
+    return html`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
       <div style="width:42px;height:42px;border-radius:10px;background:${alreadyToday?'#dcfce7':missing>0?'#fee2e2':'#eff6ff'};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${alreadyToday?'✅':missing>0?'⚠️':'📚'}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:14px;color:var(--navy)">${salle}</div>
         <div style="font-size:13px;color:var(--g600)">Placard <strong>${placard}</strong> — Étagère <strong>${etagere}</strong></div>
-        <div style="font-size:12px;color:var(--g500);margin-top:4px">${booksHere.length} livre(s) · ${missing?`<span style="color:#dc2626;font-weight:600">${missing} introuvable(s)</span>`:'<span style="color:#16a34a">Tous présents</span>'}</div>
+        <div style="font-size:12px;color:var(--g500);margin-top:4px">${booksHere.length} livre(s) · ${safe(missing?`<span style="color:#dc2626;font-weight:600">${missing} introuvable(s)</span>`:'<span style="color:#16a34a">Tous présents</span>')}</div>
         <div style="font-size:11px;color:var(--g400);margin-top:3px">Dernière vérification : ${lastDate}</div>
       </div>
       <div style="flex-shrink:0">
-        ${alreadyToday
+        ${safe(alreadyToday
           ?'<span style="font-size:11px;color:#16a34a;font-weight:600;padding:5px 10px;background:#dcfce7;border-radius:20px">✅ OK aujourd\'hui</span>'
-          :`<button type="button" class="btn bn btn-sm" onclick="markShelfChecked('${key.replace(/'/g,"\\'")}')">✅ Vérification OK</button>`}
+          :`<button type="button" class="btn bn btn-sm" onclick="markShelfChecked('${key.replace(/'/g,"\\'")}')">✅ Vérification OK</button>`)}
       </div>
     </div>`;
   }).join('');
@@ -4707,7 +4713,7 @@ function _allShelves(){
   });
 }
 
-function _shelfKey(s){return `${s.salle}|${s.placard}|${s.etagere}`;}
+function _shelfKey(s){return html`${s.salle}|${s.placard}|${s.etagere}`;}
 
 /* Rendre le panneau Étagères */
 function rAdmShelves(){
@@ -4728,17 +4734,17 @@ function rAdmShelves(){
       summaryEl.innerHTML=managers.map(u=>{
         const assigned=(u.assignedShelves||[]);
         const count=assigned.length;
-        return `<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:14px 16px">
+        return html`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;padding:14px 16px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="width:36px;height:36px;border-radius:50%;background:var(--navy);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>
             <div>
               <div style="font-weight:600;color:var(--navy)">${u.prenom} ${u.nom}</div>
-              <div style="font-size:12px;color:var(--g400)">${rBdg(u.role)}</div>
+              <div style="font-size:12px;color:var(--g400)">${safe(rBdg(u.role))}</div>
             </div>
             <button type="button" class="btn bo btn-xs" style="margin-left:auto" onclick="openShelfAssign(${u.id})">✏️ Modifier</button>
           </div>
-          ${count?`<div style="display:flex;flex-wrap:wrap;gap:5px">${assigned.map(s=>`<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;padding:2px 8px;border-radius:20px;border:0.5px solid #bfdbfe">${s}</span>`).join('')}</div>`
-          :`<div style="font-size:12px;color:var(--g400);font-style:italic">Aucune étagère assignée</div>`}
+          ${safe(count?`<div style="display:flex;flex-wrap:wrap;gap:5px">${assigned.map(s=>html`<span style="background:#eff6ff;color:#1d4ed8;font-size:11px;padding:2px 8px;border-radius:20px;border:0.5px solid #bfdbfe">${s}</span>`).join('')}</div>`
+          :`<div style="font-size:12px;color:var(--g400);font-style:italic">Aucune étagère assignée</div>`)}
         </div>`;
       }).join('');
     }
@@ -4753,7 +4759,7 @@ function rAdmShelves(){
   }
 
   /* En-tête avec noms des gestionnaires */
-  const headerCols=managers.map(u=>`<th style="padding:8px 12px;font-weight:500;color:var(--g500);font-size:12px;text-align:center;white-space:nowrap;min-width:80px">${u.prenom}<br><span style="font-size:10px;opacity:.7">${u.nom}</span></th>`).join('');
+  const headerCols=managers.map(u=>html`<th style="padding:8px 12px;font-weight:500;color:var(--g500);font-size:12px;text-align:center;white-space:nowrap;min-width:80px">${u.prenom}<br><span style="font-size:10px;opacity:.7">${u.nom}</span></th>`).join('');
 
   /* Grouper par salle puis placard */
   const bySalle={};
@@ -4768,13 +4774,13 @@ function rAdmShelves(){
     const booksOnShelf=books.filter(b=>b.salle===s.salle&&b.placard===s.placard&&b.etagere===s.etagere).length;
     const cells=managers.map(u=>{
       const assigned=(u.assignedShelves||[]).includes(key);
-      return `<td style="padding:8px;text-align:center;border-top:0.5px solid var(--g100)">
+      return html`<td style="padding:8px;text-align:center;border-top:0.5px solid var(--g100)">
         <span style="display:inline-flex;width:22px;height:22px;border-radius:50%;align-items:center;justify-content:center;font-size:12px;${assigned?'background:#dcfce7;':'background:var(--g50);'}">
           ${assigned?'✅':'○'}
         </span>
       </td>`;
     }).join('');
-    return `<tr style="background:white">
+    return html`<tr style="background:white">
       <td style="padding:10px 14px;border-top:0.5px solid var(--g100);white-space:nowrap;font-size:13px;color:var(--g500)">${s.salle}</td>
       <td style="padding:10px 12px;border-top:0.5px solid var(--g100);font-weight:600;font-size:13px">${s.placard} / ${s.etagere}</td>
       <td style="padding:10px 10px;border-top:0.5px solid var(--g100);font-size:12px;color:var(--g400);text-align:center">${booksOnShelf} livre(s)</td>
@@ -4782,7 +4788,7 @@ function rAdmShelves(){
     </tr>`;
   }).join('');
 
-  tb.innerHTML=`
+  tb.innerHTML=html`
     <thead><tr style="background:var(--g50)">
       <th style="padding:10px 14px;text-align:left;font-weight:500;color:var(--g500);font-size:12px">Salle</th>
       <th style="padding:10px 12px;text-align:left;font-weight:500;color:var(--g500);font-size:12px">Placard / Étagère</th>
@@ -4818,12 +4824,12 @@ function _rShelvesActivity(){
             ?'<div style="padding:24px;text-align:center;color:var(--g400);font-size:13px">Aucune vérification enregistrée</div>'
             :recentChecks.map(c=>{
               const dt=new Date(c.checkedAt).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-              return `<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);display:flex;align-items:center;gap:10px">
+              return html`<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);display:flex;align-items:center;gap:10px">
                 <span style="font-size:18px">✅</span>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:500;color:var(--navy)">${c.salle} — Placard ${c.placard} / Étagère ${c.etagere}</div>
                   <div style="font-size:12px;color:var(--g500)">${c.userName}</div>
-                  <div style="font-size:11px;color:var(--g400);margin-top:2px">${c.booksCount} livre(s) · ${c.missingCount>0?`<span style="color:#dc2626">${c.missingCount} introuvable(s)</span>`:''}</div>
+                  <div style="font-size:11px;color:var(--g400);margin-top:2px">${c.booksCount} livre(s) · ${safe(c.missingCount>0?`<span style="color:#dc2626">${c.missingCount} introuvable(s)</span>`:'')}</div>
                 </div>
                 <div style="font-size:11px;color:var(--g400);white-space:nowrap">${dt}</div>
               </div>`;
@@ -4843,7 +4849,7 @@ function _rShelvesActivity(){
               const dt=new Date(b.lastModifiedAt).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
               const statusIcon=b.status==='missing'?'⚠️':b.status==='borrowed'?'📖':b.status==='retired'?'📦':'✅';
               const roleBadge=b.lastModifiedRole==='enrol'?'<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:1px 6px;border-radius:10px">Enrôleur</span>':b.lastModifiedRole==='admin'?'<span style="background:#eff6ff;color:#1d4ed8;font-size:10px;padding:1px 6px;border-radius:10px">Admin</span>':'';
-              return `<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);display:flex;align-items:center;gap:10px">
+              return html`<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);display:flex;align-items:center;gap:10px">
                 <span style="font-size:16px">${statusIcon}</span>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:500;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.titre}</div>
@@ -4864,7 +4870,7 @@ function openShelfAssign(userId){
   const sel=document.getElementById('shelf-user-sel');
   if(!sel)return;
   sel.innerHTML='<option value="">— Choisir un membre —</option>'+
-    managers.map(u=>`<option value="${u.id}">${u.prenom} ${u.nom} (${u.role})</option>`).join('');
+    managers.map(u=>html`<option value="${u.id}">${u.prenom} ${u.nom} (${u.role})</option>`).join('');
   if(userId){sel.value=userId;loadShelfCheckboxes();}
   else{document.getElementById('shelf-checkboxes').innerHTML='<div style="color:var(--g400);font-size:13px;padding:8px 0">Sélectionnez d\'abord un membre</div>';}
   document.getElementById('shelf-err').textContent='';
@@ -4891,12 +4897,12 @@ function loadShelfCheckboxes(){
     groups[gk].push(s);
   });
 
-  container.innerHTML=Object.entries(groups).map(([gk,shs])=>`
+  container.innerHTML=Object.entries(groups).map(([gk,shs])=>html`
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${gk}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
         ${shs.map(s=>{const key=_shelfKey(s);
-          return `<label style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;border:1px solid ${assigned.has(key)?'#3b82f6':'var(--g200)'};background:${assigned.has(key)?'#eff6ff':'white'};cursor:pointer;font-size:13px;transition:all .15s">
+          return html`<label style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;border:1px solid ${assigned.has(key)?'#3b82f6':'var(--g200)'};background:${assigned.has(key)?'#eff6ff':'white'};cursor:pointer;font-size:13px;transition:all .15s">
             <input type="checkbox" data-shelf-key="${key}" ${assigned.has(key)?'checked':''} style="accent-color:#3b82f6" onchange="this.closest('label').style.background=this.checked?'#eff6ff':'white';this.closest('label').style.borderColor=this.checked?'#3b82f6':'var(--g200)'"/>
             Étagère ${s.etagere}
           </label>`;
@@ -4923,7 +4929,7 @@ async function saveShelfAssign(){
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PANNEAU QUOTA FIREBASE
+   PANNEAU QUOTA (supprimé — était spécifique à Firebase)
    Lectures / Écritures / Suppressions vs limites plan Spark
 ═══════════════════════════════════════════════════════════════ */
 let _qRefreshTimer=null;
@@ -5007,14 +5013,14 @@ function rAdmLoans(filter){
     }
 
     const rowBg=late?'background:#fff5f5':l.status==='rejected'?'background:#fff5f5':'';
-    return `<tr style="${rowBg}">
+    return html`<tr style="${rowBg}">
       <td style="font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.bookTitle||''}">${l.bookTitle||'—'}</td>
-      <td><div style="font-weight:500">${l.userName||l.userAbbrev||'—'}</div>${u?`<div style="font-size:11px;color:var(--g400);margin-top:2px">${u.profession||u.commune||''}</div>`:''}</td>
-      <td>${u?rBdg(u.role):'—'}</td>
+      <td><div style="font-weight:500">${l.userName||l.userAbbrev||'—'}</div>${safe(u?html`<div style="font-size:11px;color:var(--g400);margin-top:2px">${u.profession||u.commune||''}</div>`:'')}</td>
+      <td>${safe(u?rBdg(u.role):'—')}</td>
       <td style="font-size:12px;color:var(--g500);white-space:nowrap">${l.requestedAt?new Date(l.requestedAt).toLocaleDateString('fr-FR'):'—'}</td>
       <td style="font-size:12px;white-space:nowrap${late?';color:#dc2626;font-weight:700':''}">${l.dueDate||'—'}</td>
-      <td>${statusBadge}</td>
-      <td><div style="display:flex;gap:4px;flex-wrap:wrap">${actionBtn}</div></td>
+      <td>${safe(statusBadge)}</td>
+      <td><div style="display:flex;gap:4px;flex-wrap:wrap">${safe(actionBtn)}</div></td>
     </tr>`;
   }).join('');
 }
@@ -5076,8 +5082,8 @@ function parseCSV(text){
 function showMap(){
   document.getElementById('dz').style.display='none';document.getElementById('imp-map').style.display='block';
   document.getElementById('imp-prv').style.display='none';document.getElementById('imp-res').style.display='none';
-  const opts=FMAP.map(f=>`<option value="${f.key}">${f.label}${f.req?' *':''}</option>`).join('');
-  document.getElementById('mpg').innerHTML=impHdr.map((h,i)=>`
+  const opts=FMAP.map(f=>html`<option value="${f.key}">${f.label}${f.req?' *':''}</option>`).join('');
+  document.getElementById('mpg').innerHTML=impHdr.map((h,i)=>html`
     <div class="mpr"><div class="mps" title="${h}">📋 ${h}</div><div class="mpa">→</div>
       <div class="mpd"><select id="mp${i}"><option value="">(ignorer)</option>${opts}</select></div>
     </div>`).join('');
@@ -5089,12 +5095,12 @@ function doPrev(){
   impParsed=impRaw.map(row=>{const o={};impMap.forEach((k,i)=>{if(k&&row[i]!==undefined)o[k]=String(row[i]).trim();});return o;}).filter(o=>o.titre&&o.titre.length>0);
   document.getElementById('imp-map').style.display='none';document.getElementById('imp-prv').style.display='block';
   document.getElementById('icnt').textContent=impParsed.length;
-  document.getElementById('imp-info').innerHTML=`✅ <strong>${impParsed.length} ligne(s)</strong> prêtes sur <strong>${impRaw.length}</strong> lues.`;
+  document.getElementById('imp-info').innerHTML=html`✅ <strong>${impParsed.length} ligne(s)</strong> prêtes sur <strong>${impRaw.length}</strong> lues.`;
   document.getElementById('pvtot').textContent=`${Math.min(10,impParsed.length)}/${impParsed.length}`;
   const cols=impMap.filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i);
   const clbls=cols.map(c=>FMAP.find(f=>f.key===c)?.label||c);
-  document.getElementById('pvtbl').innerHTML=`<table><thead><tr>${clbls.map(l=>`<th>${l}</th>`).join('')}</tr></thead>
-    <tbody>${impParsed.slice(0,10).map(r=>`<tr>${cols.map(c=>`<td>${r[c]||''}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  document.getElementById('pvtbl').innerHTML=`<table><thead><tr>${clbls.map(l=>html`<th>${l}</th>`).join('')}</tr></thead>
+    <tbody>${impParsed.slice(0,10).map(r=>html`<tr>${safe(cols.map(c=>html`<td>${r[c]||''}</td>`).join(''))}</tr>`).join('')}</tbody></table>`;
 }
 async function doImport(){
   const clr=document.getElementById('iclr').checked;
@@ -5102,11 +5108,11 @@ async function doImport(){
   showLoading('Import en cours…');
   try{
     if(clr){
-      /* Supprimer tous les livres existants dans Firebase */
+      /* Supprimer tous les livres existants dans Supabase */
       await sbBatchDel('books',books.map(b=>String(b.id)));
       books=[];nxB=1;
     }
-    /* Insérer par lots de 500 (limite Firestore) */
+    /* Insérer par lots de 500 (limite Supabase) */
     let added=0;
     const newBooks=impParsed.map(r=>({id:nxB++,titre:r.titre||'',auteur:r.auteur||'',cat:r.cat||'Général',
       salle:r.salle||'',placard:r.placard||'',etagere:r.etagere||'',lang:r.lang||'',
@@ -5141,9 +5147,9 @@ function gEmo(cat){return catStyle(cat).icon;}
 ═══════════════════════════════════════════════════════════════ */
 /* showSuperAdmin() définie plus bas avec la logique complète */
 /* ═══════════════════════════════════════════════════════════════
-   SUPER-ADMIN — Mot de passe stocké dans Firebase (_spaces/__superadmin__)
-   Mot de passe par défaut : Admin2025
-   Le hash SHA-256 est stocké dans Firestore une fois changé (universel).
+   SUPER-ADMIN — Mot de passe stocké dans Supabase (super_admin_config.pwdHash)
+   Le hash SHA-256 par défaut est lu depuis Supabase ; si absent, ce fallback
+   est utilisé uniquement lors de la première installation.
 ═══════════════════════════════════════════════════════════════ */
 const SA_DEFAULT_HASH='f0d69d50df9d46dbb367d8ab8265d051e4e15cd15277230b5c8cd0b0aba18fca';
 
@@ -5194,15 +5200,9 @@ async function saLogin(){
   if(btn)btn.disabled=true;
   try{
     const hashHex=await saHash(pwd);
-    console.log('[SA] Hash du mot de passe saisi :', hashHex.substring(0,16)+'...');
-    console.log('[SA] Hash par défaut Admin2025  :', SA_DEFAULT_HASH.substring(0,16)+'...');
     const {hash:storedHash,isDefault,status}=await saGetStoredHash();
-    console.log('[SA] Hash retenu (isDefault='+isDefault+') :', storedHash.substring(0,16)+'...');
-    console.log('[SA] Correspondent :', hashHex===storedHash);
     if(hashHex!==storedHash){
-      errEl.innerHTML=isDefault
-        ?'Mot de passe incorrect. <span style="opacity:.6;font-size:12px">Par défaut : <strong>Admin2025</strong></span>'
-        :'Mot de passe incorrect.';
+      errEl.innerHTML='Mot de passe incorrect.';
       return;
     }
     /* Succès */
@@ -5210,6 +5210,8 @@ async function saLogin(){
     document.getElementById('sa-login-screen').style.display='none';
     document.getElementById('sa-panel-screen').style.display='block';
     saLoadSpaces();
+    const _codeEl=document.getElementById('sa-new-code');
+    if(_codeEl&&!_codeEl.value)_codeEl.value=saGenSpaceCode();
     if(isDefault){
       setTimeout(()=>{
         const w=document.getElementById('sa-default-pwd-warn');
@@ -5231,17 +5233,16 @@ async function saDiagnose(){
   diagEl.innerHTML='⏳ Diagnostic en cours…';
   try{
     _initSb();
-    const hashAdmin=await saHash('Admin2025');
     const {data,error}=await sb.from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
     const storedHashStr=data?.pwdHash?data.pwdHash.substring(0,16)+'...':'(champ absent)';
     const sbStatus=error?('❌ '+error.message):'✅ OK';
-    diagEl.innerHTML=`<strong>🔍 Diagnostic super-admin</strong><br>
+    const usingDefault=data?.pwdHash===SA_DEFAULT_HASH||!data?.pwdHash;
+    diagEl.innerHTML=html`<strong>🔍 Diagnostic super-admin</strong><br>
       Supabase client : ✅ prêt<br>
       super_admin_config : <strong>${sbStatus}</strong><br>
-      Hash Admin2025 : <code>${hashAdmin.substring(0,16)}…</code><br>
       Hash stocké SB : <code>${storedHashStr}</code><br>
       Hash par défaut : <code>${SA_DEFAULT_HASH.substring(0,16)}…</code><br>
-      <span style="color:${hashAdmin===SA_DEFAULT_HASH?'#4ade80':'#f87171'}">${hashAdmin===SA_DEFAULT_HASH?'✅ Hash Admin2025 = hash par défaut':'❌ MISMATCH hash!'}</span>`;
+      <span style="color:${usingDefault?'#fbbf24':'#4ade80'}">${usingDefault?'⚠️ Mot de passe par défaut actif — changez-le !':'✅ Mot de passe personnalisé'}</span>`;
   }catch(e){
     diagEl.innerHTML='❌ Erreur diagnostic : '+e.message;
   }
@@ -5269,7 +5270,7 @@ async function saLoadSpaces(){
       listEl.innerHTML='<div style="text-align:center;padding:40px;color:rgba(255,255,255,.3);font-size:14px">Aucune bibliothèque créée. Utilisez le formulaire ci-dessus.</div>';
       return;
     }
-    listEl.innerHTML=spaces.map(s=>`
+    listEl.innerHTML=spaces.map(s=>html`
       <div class="space-card">
         <div class="space-dot" style="background:${s.color||'#6366f1'}22">${s.active!==false?'📚':'🔒'}</div>
         <div style="flex:1;min-width:0">
@@ -5290,14 +5291,16 @@ async function saLoadSpaces(){
         </div>
       </div>`).join('');
   }catch(e){
-    if(listEl)listEl.innerHTML=`<div style="color:#f87171;padding:20px">Erreur : ${e.message}</div>`;
+    if(listEl)listEl.innerHTML=html`<div style="color:#f87171;padding:20px">Erreur : ${e.message}</div>`;
   }
 }
 
 function saClearCreate(){
-  ['sa-new-code','sa-new-name','sa-new-short','sa-new-tag','sa-new-admin-code'].forEach(id=>{
+  ['sa-new-name','sa-new-short','sa-new-tag','sa-new-admin-code'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
+  /* Régénérer un code opaque après chaque effacement */
+  const _ce=document.getElementById('sa-new-code');if(_ce)_ce.value=saGenSpaceCode();
   const col=document.getElementById('sa-new-color');if(col)col.value='#22806B';
   const err=document.getElementById('sa-create-err');if(err)err.textContent='';
   const suc=document.getElementById('sa-create-success');if(suc)suc.style.display='none';
@@ -5342,7 +5345,7 @@ async function saCreateSpace(){
     if(usrErr)throw new Error('Admin: '+usrErr.message);
     /* Succès */
     const url=`${window.location.origin}/${code}`;
-    sucEl.innerHTML=`✅ <strong>Bibliothèque "${name}" créée avec succès !</strong><br>
+    sucEl.innerHTML=html`✅ <strong>Bibliothèque "${name}" créée avec succès !</strong><br>
       🔗 URL : <a href="${url}" target="_blank" style="color:#4ade80;font-weight:700">${url}</a><br>
       👤 Code admin : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${admCode}</code>`;
     sucEl.style.display='block';
@@ -5408,7 +5411,7 @@ function lighten(hex,pct){
 }
 function colorWithAlpha(hex,alpha){
   const {r,g,b}=hexToRgb(hex);
-  return `rgba(${r},${g},${b},${alpha})`;
+  return html`rgba(${r},${g},${b},${alpha})`;
 }
 
 function applyColorVars(color){
@@ -5447,7 +5450,7 @@ const THEME_PALETTES=[
 ];
 
 function buildThemePalettes(){
-  return THEME_PALETTES.map(p=>`
+  return THEME_PALETTES.map(p=>html`
     <button type="button" onclick="selectPalette('${p.color}')"
       style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:2px solid ${(SPACE?.color||cfg?.themeColor||'#22806B')===p.color?p.color:'var(--g200)'};background:${(SPACE?.color||'#22806B')===p.color?p.color+'18':'white'};cursor:pointer;transition:all .2s;width:100%;font-family:inherit"
       onmouseover="this.style.borderColor='${p.color}';this.style.background='${p.color}18'"
@@ -5528,7 +5531,7 @@ function showLoans(){
   }
   /* Logo espace */
   const nbr=document.getElementById('nbr-loans');
-  if(nbr&&SPACE)nbr.innerHTML=`<span id="nbr-logo-loans"></span><span style="font-family:'Cormorant Garamond',serif">${SPACE.short||'ComoéBiblio'}</span>`;
+  if(nbr&&SPACE)nbr.innerHTML=html`<span id="nbr-logo-loans"></span><span style="font-family:'Cormorant Garamond',serif">${SPACE.short||'ComoéBiblio'}</span>`;
   if(cfg.logoB64){const lEl=document.getElementById('nbr-logo-loans');if(lEl){lEl.style.cssText='width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:8px;display:inline-block;vertical-align:middle';lEl.outerHTML=`<img src="${cfg.logoB64}" style="width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" alt="logo"/>`;}}
   rLoans('active');
 }
@@ -5559,7 +5562,7 @@ function rLoans(filter='active'){
   if(cntEl)cntEl.textContent=list.length+' emprunt(s)'+(pendingAct?' \u2022 '+pendingAct+' action(s) en attente':'');
   if(!list.length){
     const labels={active:'en cours',returned:'retourné validé',rejected:'rejeté',all:''};
-    tb.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--g400)">Aucun emprunt ${labels[filter]||''}.</td></tr>`;
+    tb.innerHTML=html`<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--g400)">Aucun emprunt ${labels[filter]||''}.</td></tr>`;
     return;
   }
   const isAdmOrVal=curUser&&(curUser.role==='admin'||curUser.role==='validator'||(curUser.adminTabs&&curUser.adminTabs.includes('loans_validator')));
@@ -5595,7 +5598,7 @@ function rLoans(filter='active'){
     /* Suppression uniquement sur les statuts finaux */
     if(isAdmOrVal&&(l.status==='returned'||l.status==='rejected'))
       actionBtn=`<button type="button" class="btn bd btn-xs" title="Supprimer cet historique" onclick="deleteLoanHistory('${l.id}')">&#128465;</button>`;
-    return `<tr style="${late?'background:#fff5f5':l.status==='rejected'?'background:#fff5f5':''}">
+    return html`<tr style="${late?'background:#fff5f5':l.status==='rejected'?'background:#fff5f5':''}">
       <td style="font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.bookTitle||'—'}</td>
       <td>${l.userName||l.userAbbrev||'—'}</td>
       <td style="font-size:12px;color:var(--g500)">${l.requestedAt?new Date(l.requestedAt).toLocaleDateString('fr-FR'):'—'}</td>
@@ -5673,7 +5676,7 @@ async function confirmLoan(){
 async function deleteLoanHistory(loanId){
   const l=loans.find(x=>x.id==loanId);
   if(!l)return;
-  if(!confirm('Supprimer définitivement cet historique d\'emprunt ?\n"'+l.bookTitle+'" — '+l.userName+'\nCette action libère de l\'espace Firebase et est irréversible.'))return;
+  if(!confirm('Supprimer définitivement cet historique d\'emprunt ?\n"'+l.bookTitle+'" — '+l.userName+'\nCette action est irréversible.'))return;
   try{
     await sbDel('loans',loanId);
     const idx=loans.findIndex(x=>x.id==loanId);if(idx!==-1)loans.splice(idx,1);

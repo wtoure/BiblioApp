@@ -146,7 +146,7 @@
     <p id="sa-err" style="color:var(--err);font-size:13px;text-align:center;margin-top:14px;min-height:18px"></p>
     <button type="button" onclick="saDiagnose()" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer;margin-top:8px;width:100%;font-family:inherit;text-decoration:underline">🔍 Diagnostiquer la connexion</button>
     <div id="sa-diag" class="diagbox"></div>
-    <p style="text-align:center;color:var(--faint);font-size:11px;margin-top:20px">Mot de passe par défaut : <strong style="color:var(--muted)">Admin2025</strong></p>
+    <p style="text-align:center;color:var(--faint);font-size:11px;margin-top:20px">Contactez l'administrateur système pour obtenir le mot de passe.</p>
   </div>
 </div>
 
@@ -169,7 +169,7 @@
     <!-- Avertissement mot de passe par défaut -->
     <div id="warn-pwd" class="warnbox">
       <span style="font-size:22px">⚠️</span>
-      <div style="flex:1"><strong>Vous utilisez le mot de passe par défaut (Admin2025).</strong><br>Changez-le pour sécuriser l'accès super-admin.</div>
+      <div style="flex:1"><strong>Vous utilisez le mot de passe par défaut.</strong><br>Changez-le pour sécuriser l'accès super-admin.</div>
       <button class="btn-p" style="width:auto;padding:9px 18px;font-size:13px" onclick="openM('m-pwd')">🔑 Changer</button>
     </div>
 
@@ -236,14 +236,14 @@
   </div>
 </div>
 
-<!-- Modal : renommer une bibliothèque (migration Firebase) -->
+<!-- Modal : renommer une bibliothèque -->
 <div class="mov" id="m-rename">
   <div class="modal modal-lg">
     <div class="mhd"><h3>🔄 Renommer l'espace</h3><button class="mcl" onclick="cM('m-rename')">✕</button></div>
     <div class="mbdy">
       <div class="mig-warn">
-        ⚠️ <strong>Cette opération migre toutes les données Firebase.</strong><br>
-        L'ancien code sera supprimé. L'URL d'accès changera. Mettez à jour <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px">DEFAULT_SPACE</code> dans <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px">index.html</code> après.
+        ⚠️ <strong>Cette opération renomme l'espace dans Supabase.</strong><br>
+        L'ancien code sera supprimé. L'URL d'accès changera. Mettez à jour <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px">DEFAULT_SPACE</code> dans <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px">app.js</code> après.
       </div>
       <div class="fg">
         <label>Ancien code (actuel)</label>
@@ -312,7 +312,7 @@
   <div class="modal">
     <div class="mhd"><h3>🔑 Changer le mot de passe</h3><button class="mcl" onclick="cM('m-pwd')">✕</button></div>
     <div class="mbdy">
-      <p style="color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.6">Stocké en hash SHA-256 dans Firebase. Valable sur <strong style="color:var(--text)">tous les navigateurs et appareils</strong>. Min. 6 caractères.</p>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.6">Stocké en hash SHA-256 dans Supabase. Valable sur <strong style="color:var(--text)">tous les navigateurs et appareils</strong>. Min. 6 caractères.</p>
       <div class="fg"><label>Nouveau mot de passe</label><input type="password" id="p-new" class="fi" placeholder="Min. 6 caractères…"/></div>
       <div class="fg"><label>Confirmer</label><input type="password" id="p-conf" class="fi" placeholder="Répéter…"/></div>
       <p id="p-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
@@ -324,47 +324,37 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const FB_API_KEY='AIzaSyBIqsfTSS3ypsHc_dQrKhYpB8pIbF9adBY';
-const FB_PROJECT='comoe-biblio-f28d7';
-const FS_ROOT=`https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
-const BATCH_URL=`${FS_ROOT}:batchWrite`;
-let fbToken=null;
+const SB_URL='https://ktknaajjtmhevsafrpjv.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0a25hYWpqdG1oZXZzYWZycGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjQzMTMsImV4cCI6MjA5NjM0MDMxM30.-g5AA1lnvMYEOp9HrHayTant_FXKhJRoW65oX9JOwJ4';
+let sb=null;
+function _sb(){if(!sb)sb=supabase.createClient(SB_URL,SB_KEY);return sb;}
 const SA_DEFAULT_HASH='f0d69d50df9d46dbb367d8ab8265d051e4e15cd15277230b5c8cd0b0aba18fca';
 
-/* Firestore helpers */
-function tv(v){
-  if(v===null||v===undefined)return{nullValue:null};
-  if(typeof v==='boolean')return{booleanValue:v};
-  if(typeof v==='number')return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
-  if(typeof v==='string')return{stringValue:v};
-  if(Array.isArray(v))return{arrayValue:{values:v.map(tv)}};
-  if(typeof v==='object')return{mapValue:{fields:tf(v)}};
-  return{stringValue:String(v)};
+/* Supabase helpers */
+async function sbQ(table,filters={}){
+  let q=_sb().from(table).select('*');
+  for(const[k,v]of Object.entries(filters))q=q.eq(k,v);
+  const{data,error}=await q;
+  if(error)throw new Error(error.message);
+  return data||[];
 }
-function tf(obj){const f={};for(const[k,v]of Object.entries(obj))f[k]=tv(v);return f;}
-function fd(doc){
-  if(!doc?.fields)return{};
-  const o={};
-  for(const[k,v]of Object.entries(doc.fields)){
-    if('stringValue'in v)o[k]=v.stringValue;
-    else if('booleanValue'in v)o[k]=v.booleanValue;
-    else if('integerValue'in v)o[k]=parseInt(v.integerValue);
-    else if('nullValue'in v)o[k]=null;
-    else if('arrayValue'in v)o[k]=(v.arrayValue.values||[]).map(i=>i.stringValue??i.integerValue??null);
-    else o[k]=v;
-  }
-  return o;
+async function sbUpd(table,match,data){
+  let q=_sb().from(table).update(data);
+  for(const[k,v]of Object.entries(match))q=q.eq(k,v);
+  const{error}=await q;
+  if(error)throw new Error(error.message);
 }
-function fbH(){const h={'Content-Type':'application/json'};if(fbToken)h['Authorization']='Bearer '+fbToken;return h;}
-
-async function fbAuth(){
-  const r=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`,{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({returnSecureToken:true})
-  });
-  const d=await r.json();
-  if(!d.idToken)throw new Error('Auth Firebase : '+(d.error?.message||'Échec'));
-  fbToken=d.idToken;
+async function sbIns(table,data){
+  const{error}=await _sb().from(table).upsert(data);
+  if(error)throw new Error(error.message);
+}
+async function sbDel(table,match){
+  let q=_sb().from(table).delete();
+  for(const[k,v]of Object.entries(match))q=q.eq(k,v);
+  const{error}=await q;
+  if(error)throw new Error(error.message);
 }
 
 async function sha256(s){
@@ -407,28 +397,15 @@ function genCode(){
 
 /* Init */
 async function init(){
-  try{
-    await fbAuth();
-    console.log('[SA] Auth OK');
-  }catch(e){
-    document.getElementById('sa-err').textContent='Firebase inaccessible : '+e.message;
-  }
+  _sb(); /* pré-initialise le client */
   document.getElementById('sa-pwd').addEventListener('keypress',e=>{if(e.key==='Enter')saLogin();});
 }
 
-/* Lecture du hash stocké */
+/* Lecture du hash stocké dans super_admin_config */
 async function getStoredHash(){
   try{
-    const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{headers:fbH()});
-    console.log('[SA] __superadmin__ HTTP',r.status);
-    if(r.status===404)return{hash:SA_DEFAULT_HASH,isDefault:true};
-    if(r.ok){
-      const doc=fd(await r.json());
-      if(doc?.pwdHash)return{hash:doc.pwdHash,isDefault:false};
-    }else{
-      const e=await r.json().catch(()=>({}));
-      console.warn('[SA] Firebase',r.status,e?.error?.message||'');
-    }
+    const{data,error}=await _sb().from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
+    if(!error&&data?.pwdHash)return{hash:data.pwdHash,isDefault:false};
   }catch(e){console.warn('[SA]',e.message);}
   return{hash:SA_DEFAULT_HASH,isDefault:true};
 }
@@ -440,13 +417,11 @@ async function saLogin(){
   if(!pwd){errEl.textContent='Veuillez saisir le mot de passe.';return;}
   errEl.textContent='Vérification…';btn.disabled=true;
   try{
-    if(!fbToken)await fbAuth();
     const h=await sha256(pwd);
     const{hash:ref,isDefault}=await getStoredHash();
-    console.log('[SA] Saisi:',h.substring(0,12),'— Ref:',ref.substring(0,12),'— Match:',h===ref);
     if(h!==ref){
       errEl.innerHTML=isDefault
-        ?'Mot de passe incorrect. <span style="opacity:.6;font-size:12px">Par défaut : <strong>Admin2025</strong></span>'
+        ?'Mot de passe incorrect.'
         :'Mot de passe incorrect.';
       return;
     }
@@ -454,7 +429,6 @@ async function saLogin(){
     document.getElementById('login-view').style.display='none';
     document.getElementById('panel-view').style.display='block';
     loadSpaces();
-    /* Pré-remplir le champ code avec une valeur aléatoire */
     const codeEl=document.getElementById('n-code');
     if(codeEl&&!codeEl.value)codeEl.value=genCode();
     if(isDefault)setTimeout(()=>{document.getElementById('warn-pwd').style.display='flex';},500);
@@ -466,23 +440,16 @@ async function saDiagnose(){
   const el=document.getElementById('sa-diag');
   el.style.display='block';el.textContent='⏳ Diagnostic…';
   try{
-    if(!fbToken)try{await fbAuth();}catch(e){}
-    const tok=fbToken?('✅ '+fbToken.substring(0,16)+'...'):'❌ ABSENT';
     const hAdmin=await sha256('Admin2025');
     const hOk=hAdmin===SA_DEFAULT_HASH?'✅ Correct':'❌ MISMATCH';
-    let fbSt='?',fbMsg='',fbHash='(non lu)';
-    try{
-      const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{headers:fbH()});
-      fbSt=r.status;
-      if(r.ok){const d=fd(await r.json());fbHash=d?.pwdHash?(d.pwdHash.substring(0,16)+'...'):'(champ absent)';}
-      else{const b=await r.json().catch(()=>({}));fbMsg=' — '+(b?.error?.message||'');}
-    }catch(e){fbSt='Réseau: '+e.message;}
+    const{data,error}=await _sb().from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
+    const sbSt=error?('❌ '+error.message):'✅ Connecté';
+    const sbHash=data?.pwdHash?(data.pwdHash.substring(0,16)+'...'):'(champ absent)';
     el.innerHTML=
-      `<strong>Token Firebase</strong> : ${tok}<br>`+
+      `<strong>Supabase</strong>           : ${sbSt}<br>`+
       `<strong>sha256("Admin2025")</strong> : ${hAdmin.substring(0,16)}… ${hOk}<br>`+
-      `<strong>Hash par défaut</strong>    : ${SA_DEFAULT_HASH.substring(0,16)}…<br>`+
-      `<strong>HTTP __superadmin__</strong> : ${fbSt}${fbMsg}<br>`+
-      `<strong>Hash Firebase</strong>       : ${fbHash}`;
+      `<strong>Hash par défaut</strong>     : ${SA_DEFAULT_HASH.substring(0,16)}…<br>`+
+      `<strong>Hash Supabase</strong>       : ${sbHash}`;
   }catch(e){el.textContent='❌ '+e.message;}
 }
 
@@ -492,7 +459,6 @@ function doLogout(){
   document.getElementById('sa-pwd').value='';
   document.getElementById('sa-err').textContent='';
   document.getElementById('sa-diag').style.display='none';
-  fbToken=null;
 }
 
 /* Espaces */
@@ -500,32 +466,23 @@ async function loadSpaces(){
   const list=document.getElementById('spaces-list');
   list.innerHTML='<div style="text-align:center;padding:48px;color:var(--muted)">⏳ Chargement…</div>';
   try{
-    const r=await fetch(`${FS_ROOT}/_spaces?pageSize=200`,{headers:fbH()});
-    const d=await r.json();
-    const all=(d.documents||[]).map(fd).filter(s=>s.code&&s.code!=='__superadmin__');
+    const{data:spacesData,error:spacesErr}=await _sb().from('spaces').select('*').order('code');
+    if(spacesErr)throw new Error(spacesErr.message);
+    const all=spacesData||[];
     window._spacesCache=all;
-    /* Charger les comptages pour chaque espace en parallèle */
     const counts={};
     const adminCodes={};
     await Promise.all(all.map(async s=>{
       try{
-        const [bRes,rRes,uRes]=await Promise.all([
-          fetch(`${FS_ROOT}/spaces/${s.code}/books?pageSize=6`,{headers:fbH()}),
-          fetch(`${FS_ROOT}/spaces/${s.code}/requests?pageSize=1`,{headers:fbH()}),
-          fetch(`${FS_ROOT}/spaces/${s.code}/users/1`,{headers:fbH()})
+        const[bRes,rRes,uRes]=await Promise.all([
+          _sb().from('books').select('*',{count:'exact',head:true}).eq('space_code',s.code),
+          _sb().from('book_requests').select('*',{count:'exact',head:true}).eq('space_code',s.code).eq('status','pending'),
+          _sb().from('users').select('abbrev').eq('space_code',s.code).eq('id',1).maybeSingle()
         ]);
-        const bData=bRes.ok?await bRes.json().catch(()=>({})):{};
-        const rData=rRes.ok?await rRes.json().catch(()=>({})):{};
-        const bookCount=(bData.documents||[]).length;
-        const hasRequests=(rData.documents||[]).length>0;
+        const bookCount=bRes.count||0;
+        const hasRequests=(rRes.count||0)>0;
         counts[s.code]={bookCount,hasRequests,canDelete:bookCount<5&&!hasRequests};
-        /* Code admin : lire abbrev du document users/1 */
-        if(uRes.ok){
-          const ud=await uRes.json().catch(()=>({}));
-          adminCodes[s.code]=ud?.fields?.abbrev?.stringValue||'N/A';
-        } else {
-          adminCodes[s.code]='N/A';
-        }
+        adminCodes[s.code]=uRes.data?.abbrev||'N/A';
       }catch(e){
         counts[s.code]={bookCount:0,hasRequests:false,canDelete:true};
         adminCodes[s.code]='N/A';
@@ -543,7 +500,7 @@ async function loadSpaces(){
       return;
     }
     /* Codes communs facilement devinables */
-    const GUESSABLE=['comoe','admin','biblio','library','livre','book','centre','center','test','demo'];
+    const GUESSABLE=['admin','biblio','library','livre','book','centre','center','test','demo'];
     list.innerHTML=all.map(s=>`
       <div class="sitm">
         <div class="sico" style="background:${s.color||'#6366f1'}22">${s.active!==false?'📚':'🔒'}</div>
@@ -608,19 +565,7 @@ async function saveEdit(){
   if(!name||!short){errEl.textContent='Nom complet et nom court sont obligatoires.';return;}
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>Enregistrement…';
   try{
-    /* Mise à jour partielle via updateMask */
-    const fields=['name','short','tagline','color'];
-    const mask=fields.map(f=>'updateMask.fieldPaths='+f).join('&');
-    const r=await fetch(`${FS_ROOT}/_spaces/${code}?${mask}`,{
-      method:'PATCH',headers:fbH(),
-      body:JSON.stringify({fields:{
-        name:{stringValue:name},
-        short:{stringValue:short},
-        tagline:{stringValue:tag||name},
-        color:{stringValue:color}
-      }})
-    });
-    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    await sbUpd('spaces',{code},{name,short,tagline:tag||name,color});
     cM('m-edit');
     loadSpaces();
   }catch(e){errEl.textContent='Erreur : '+e.message;}
@@ -658,7 +603,7 @@ function rLog(msg,type=''){
   el.scrollTop=el.scrollHeight;
 }
 
-/* Lancer la migration de renommage */
+/* Lancer le renommage (UPDATE spaces.code — les FK cascadent automatiquement) */
 async function startRename(){
   const oldCode=document.getElementById('r-old').value.trim();
   const newCode=document.getElementById('r-new').value.trim().toLowerCase();
@@ -672,85 +617,30 @@ async function startRename(){
   if(!newCode){errEl.textContent='Saisissez le nouveau code.';return;}
   if(newCode===oldCode){errEl.textContent='Le nouveau code est identique.';return;}
   if(!/^[a-z0-9-]+$/.test(newCode)){errEl.textContent='Code invalide.';return;}
-  if(!confirm('Renommer ' + oldCode + ' en ' + newCode + ' ? Action irreversible.'))return;
+  if(!confirm('Renommer '+oldCode+' en '+newCode+' ? Les FK cascadent automatiquement.'))return;
 
-  btn.disabled=true;
-  btn.innerHTML='<span class="spin"></span>Migration...';
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Renommage…';
   try{
-    rLog('1. Lecture _spaces/'+oldCode+'...','info');
-    const chkOld=await fetch(`${FS_ROOT}/_spaces/${oldCode}`,{headers:fbH()});
-    if(!chkOld.ok)throw new Error('_spaces/'+oldCode+' introuvable.');
-    const oldData=fd(await chkOld.json());
-    rLog('   OK : "'+( oldData.name||oldCode)+'"','ok');
+    rLog('1. Vérification que "'+oldCode+'" existe…','info');
+    const{data:oldSpace,error:e1}=await _sb().from('spaces').select('name').eq('code',oldCode).maybeSingle();
+    if(e1||!oldSpace)throw new Error('"'+oldCode+'" introuvable dans Supabase.');
+    rLog('   OK : "'+oldSpace.name+'"','ok');
 
-    rLog('2. Verification disponibilite de "'+newCode+'"...','info');
-    const chkNew=await fetch(`${FS_ROOT}/_spaces/${newCode}`,{headers:fbH()});
-    if(chkNew.ok){const d=await chkNew.json();if(d.fields)throw new Error('Le code "'+newCode+'" est deja utilise.');}
+    rLog('2. Vérification disponibilité de "'+newCode+'"…','info');
+    const{data:exists}=await _sb().from('spaces').select('code').eq('code',newCode).maybeSingle();
+    if(exists)throw new Error('Le code "'+newCode+'" est déjà utilisé.');
     rLog('   OK : code disponible','ok');
 
-    rLog('3. Creation _spaces/'+newCode+'...','info');
-    const newSpaceData={...oldData,code:newCode};
-    const r3=await fetch(`${FS_ROOT}/_spaces/${newCode}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:tf(newSpaceData)})});
-    if(!r3.ok){const e=await r3.json();throw new Error(e.error?.message);}
-    rLog('   OK : _spaces/'+newCode+' cree','ok');
+    rLog('3. Renommage (UPDATE spaces SET code=newCode CASCADE)…','info');
+    const{error:e3}=await _sb().from('spaces').update({code:newCode}).eq('code',oldCode);
+    if(e3)throw new Error(e3.message);
+    rLog('   OK : toutes les données migrées automatiquement par les FK CASCADE','ok');
 
-    const cols=['users','config','counters','books','requests','sessions','loginLog','deletedUsers'];
-    rLog('4. Copie des donnees...','info');
-    for(const col of cols){
-      let docs=[];
-      try{
-        let pt=null;
-        do{
-          const url=`${FS_ROOT}/spaces/${oldCode}/${col}?pageSize=300`+(pt?'&pageToken='+pt:'');
-          const r=await fetch(url,{headers:fbH()});
-          if(!r.ok)break;
-          const d=await r.json().catch(()=>({}));
-          docs.push(...(d.documents||[]));
-          pt=d.nextPageToken||null;
-        }while(pt);
-      }catch(e){rLog('   avertissement '+col+' : '+e.message,'warn');continue;}
-      if(!docs.length)continue;
-      let ok=0;
-      for(const doc of docs){
-        const docId=doc.name.split('/').pop();
-        try{
-          const wr=await fetch(`${FS_ROOT}/spaces/${newCode}/${col}/${docId}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:doc.fields||{}})});
-          if(wr.ok)ok++;
-          else{const e=await wr.json().catch(()=>({}));rLog('   erreur '+col+'/'+docId+' : '+(e.error?.message||wr.status),'err');}
-        }catch(e){rLog('   erreur '+col+'/'+docId+' : '+e.message,'err');}
-      }
-      rLog('   OK '+col+' : '+ok+'/'+docs.length+' copies','ok');
-    }
-
-    rLog('5. Suppression ancien espace...','info');
-    for(const col of cols){
-      let docs=[];
-      try{
-        let pt=null;
-        do{
-          const url=`${FS_ROOT}/spaces/${oldCode}/${col}?pageSize=300`+(pt?'&pageToken='+pt:'');
-          const r=await fetch(url,{headers:fbH()});
-          if(!r.ok)break;
-          const d=await r.json().catch(()=>({}));
-          docs.push(...(d.documents||[]));
-          pt=d.nextPageToken||null;
-        }while(pt);
-      }catch(e){continue;}
-      for(const doc of docs){
-        await fetch('https://firestore.googleapis.com/v1/'+doc.name.replace(/^.*\/v1\//,''),{method:'DELETE',headers:fbH()}).catch(()=>{});
-      }
-      if(docs.length)rLog('   OK '+col+' : '+docs.length+' supprime(s)','ok');
-    }
-    await fetch(`${FS_ROOT}/spaces/${oldCode}`,{method:'DELETE',headers:fbH()}).catch(()=>{});
-    rLog('   OK document parent spaces/'+oldCode+' supprime','ok');
-    await fetch(`${FS_ROOT}/_spaces/${oldCode}`,{method:'DELETE',headers:fbH()}).catch(()=>{});
-    rLog('   OK _spaces/'+oldCode+' supprime','ok');
-
-    rLog('Migration terminee !','ok');
+    rLog('Renommage terminé !','ok');
     const sucEl=document.getElementById('r-suc');
-    sucEl.innerHTML='<strong>Migration reussie !</strong><br>'
+    sucEl.innerHTML='<strong>Renommage réussi !</strong><br>'
       +'Nouveau code : <code style="background:rgba(34,197,94,.15);padding:1px 7px;border-radius:4px">'+newCode+'</code><br>'
-      +'<span style="color:rgba(255,255,255,.6);font-size:12px">Dans index.html : remplacez DEFAULT_SPACE = \''+oldCode+'\' par DEFAULT_SPACE = \''+newCode+'\'</span>';
+      +'<span style="color:rgba(255,255,255,.6);font-size:12px">Dans app.js : mettez à jour DEFAULT_SPACE = \''+newCode+'\' si nécessaire.</span>';
     sucEl.style.display='block';
     document.getElementById('r-foot').style.display='none';
     loadSpaces();
@@ -759,72 +649,35 @@ async function startRename(){
     errEl.textContent=e.message;
     console.error(e);
   }finally{
-    btn.disabled=false;
-    btn.textContent='Lancer la migration';
+    btn.disabled=false;btn.textContent='Lancer la migration';
   }
 }
 
 async function confirmDelete(code,name){
-  const btn=event.currentTarget;
-  /* Vérifier les conditions : 0 livre + 1 seul member (admin) */
   try{
-    /* Compter les livres */
-    const bUrl=`${FS_ROOT}/spaces/${code}/books?pageSize=1`;
-    const bRes=await fetch(bUrl,{headers:fbH()});
-    const bData=await bRes.json().catch(()=>({}));
-    const hasBooks=bData.documents&&bData.documents.length>0;
-    if(hasBooks){
-      alert('Impossible de supprimer "'+name+'" : la bibliotheque contient des livres. Supprimez tous les livres depuis l interface admin.');
+    const[{count:bc},{data:users}]=await Promise.all([
+      _sb().from('books').select('*',{count:'exact',head:true}).eq('space_code',code),
+      _sb().from('users').select('role,disabled').eq('space_code',code)
+    ]);
+    if((bc||0)>0){
+      alert('Impossible de supprimer "'+name+'" : la bibliothèque contient des livres. Supprimez-les depuis l\'interface admin.');
       return;
     }
-    /* Compter les membres */
-    const uUrl=`${FS_ROOT}/spaces/${code}/users?pageSize=5`;
-    const uRes=await fetch(uUrl,{headers:fbH()});
-    const uData=await uRes.json().catch(()=>({}));
-    const userDocs=(uData.documents||[]).map(d=>{
-      const f=d.fields||{};
-      return{role:f.role?.stringValue||'',disabled:f.disabled?.booleanValue||false};
-    });
-    const activeNonAdmin=userDocs.filter(u=>u.role!=='admin'&&!u.disabled);
+    const activeNonAdmin=(users||[]).filter(u=>u.role!=='admin'&&!u.disabled);
     if(activeNonAdmin.length>0){
-      alert('Impossible de supprimer "'+name+'" : il reste '+activeNonAdmin.length+' membre(s) actif(s) hors admin. Supprimez-les d abord.');
+      alert('Impossible de supprimer "'+name+'" : il reste '+activeNonAdmin.length+' membre(s) actif(s). Supprimez-les d\'abord.');
       return;
     }
-    /* Conditions OK — demander confirmation */
-    if(!confirm('Supprimer definitivement la bibliotheque "'+name+'" (code: '+code+') ? Cette action est irreversible et supprimera tous les membres et la configuration.'))return;
+    if(!confirm('Supprimer définitivement "'+name+'" ('+code+') ? Irréversible.'))return;
     await deleteSpace(code,name);
-  }catch(e){
-    alert('Erreur verification : '+e.message);
-  }
+  }catch(e){alert('Erreur vérification : '+e.message);}
 }
 
-/* Suppression effective */
+/* Suppression effective — les FK CASCADE nettoient toutes les tables enfants */
 async function deleteSpace(code,name){
   try{
-    /* Collections à supprimer */
-    const collections=['users','config','counters','books','requests','sessions','loginLog','deletedUsers'];
-    for(const col of collections){
-      /* Lister et supprimer tous les docs de chaque collection */
-      let pageToken=null;
-      do{
-        const url=`${FS_ROOT}/spaces/${code}/${col}?pageSize=300`+(pageToken?'&pageToken='+pageToken:'');
-        const r=await fetch(url,{headers:fbH()});
-        if(!r.ok)break;
-        const d=await r.json().catch(()=>({}));
-        const docs=d.documents||[];
-        for(const doc of docs){
-          await fetch('https://firestore.googleapis.com/v1/'+doc.name.replace(/^.*\/v1\//,''),
-            {method:'DELETE',headers:fbH()}).catch(()=>{});
-        }
-        pageToken=d.nextPageToken||null;
-      }while(pageToken);
-    }
-    /* Supprimer le document parent spaces/{code} lui-même */
-    await fetch(`${FS_ROOT}/spaces/${code}`,{method:'DELETE',headers:fbH()}).catch(()=>{});
-    /* Supprimer le document _spaces/{code} */
-    const r=await fetch(`${FS_ROOT}/_spaces/${code}`,{method:'DELETE',headers:fbH()});
-    if(!r.ok&&r.status!==404){const e=await r.json();throw new Error(e.error?.message||r.status);}
-    alert('Bibliotheque "'+name+'" supprimee avec succes.');
+    await sbDel('spaces',{code});
+    alert('Bibliothèque "'+name+'" supprimée avec succès.');
     loadSpaces();
   }catch(e){
     alert('Erreur suppression : '+e.message);
@@ -835,10 +688,7 @@ async function deleteSpace(code,name){
 async function toggleSpace(code,cur){
   if(!confirm(cur?`Désactiver "${code}" ?`:`Réactiver "${code}" ?`))return;
   try{
-    const r=await fetch(`${FS_ROOT}/_spaces/${code}?updateMask.fieldPaths=active`,{
-      method:'PATCH',headers:fbH(),body:JSON.stringify({fields:{active:{booleanValue:!cur}}})
-    });
-    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    await sbUpd('spaces',{code},{active:!cur});
     loadSpaces();
   }catch(e){alert('Erreur : '+e.message);}
 }
@@ -860,47 +710,30 @@ async function createSpace(){
   if(!/^[a-z0-9]+$/.test(adm)){errEl.textContent='Code admin invalide (lettres et chiffres uniquement).';return;}
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>Vérification…';
   try{
-    const chk=await fetch(`${FS_ROOT}/_spaces/${code}`,{headers:fbH()});
-    if(chk.ok){const d=await chk.json();if(d.fields){errEl.textContent='Ce code est déjà utilisé.';return;}}
+    const{data:exists}=await _sb().from('spaces').select('code').eq('code',code).maybeSingle();
+    if(exists){errEl.textContent='Ce code est déjà utilisé.';return;}
     btn.innerHTML='<span class="spin"></span>Création…';
-    const spaceData={code,name,short,tagline:tag||name,color,active:true,createdAt:new Date().toISOString()};
-    const cfg={openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,
-      pdfFields:['num','titre','auteur','desc','demandeur'],
-      catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}};
-    const admin={id:1,abbrev:adm,prenom:'Administrateur',nom:name,role:'admin',canPropose:true,propUntil:null,disabled:false,photoB64:null,profession:'',whatsapp:'',commune:''};
-    const cnt={nxB:1,nxU:2,nxR:1,nxS:1,nxL:1};
-    /* 1. Créer le document _spaces/{code} */
-    const r1=await fetch(`${FS_ROOT}/_spaces/${code}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:tf(spaceData)})});
-    if(!r1.ok){const e=await r1.json();throw new Error(e.error?.message||'Échec écriture _spaces');}
 
-    /* 2. Écrire les sous-collections via PATCH individuels (contourne les restrictions batchWrite) */
-    const subDocs=[
-      {path:`spaces/${code}/users/1`,     data:admin},
-      {path:`spaces/${code}/config/main`, data:cfg},
-      {path:`spaces/${code}/counters/main`,data:cnt},
-    ];
-    const errors=[];
-    for(const {path,data} of subDocs){
-      const r=await fetch(`${FS_ROOT}/${path}`,{
-        method:'PATCH',headers:fbH(),
-        body:JSON.stringify({fields:tf(data)})
-      });
-      if(!r.ok){
-        const e=await r.json().catch(()=>({}));
-        const msg=e.error?.message||r.status;
-        console.warn('[SA] Échec écriture',path,':',msg);
-        errors.push(path+' → '+msg);
-      } else {
-        console.log('[SA] ✅ Écrit:',path);
-      }
-    }
-    if(errors.length>0){
-      /* Avertissement non bloquant : _spaces est créé, les sous-docs ont échoué */
-      console.warn('[SA] Certains sous-documents non écrits:',errors);
-      /* Stocker les données initiales dans _spaces/{code} comme fallback */
-      const fallbackData={...spaceData,_initAdmin:JSON.stringify(admin),_needsInit:true};
-      await fetch(`${FS_ROOT}/_spaces/${code}`,{method:'PATCH',headers:fbH(),body:JSON.stringify({fields:tf(fallbackData)})}).catch(()=>{});
-    }
+    /* 1. Espace */
+    await sbIns('spaces',{code,name,short,tagline:tag||name,color,active:true});
+
+    /* 2. Config */
+    await sbIns('space_config',{
+      space_code:code,openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,
+      pdfFields:['num','titre','auteur','desc','demandeur'],
+      catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}
+    });
+
+    /* 3. Compteurs */
+    await sbIns('space_counters',{space_code:code,nxB:1,nxU:2,nxR:1,nxS:1,nxL:1,nxSC:1,nxReg:1});
+
+    /* 4. Utilisateur admin */
+    await sbIns('users',{
+      id:1,space_code:code,abbrev:adm,prenom:'Administrateur',nom:name,
+      role:'admin',canPropose:true,disabled:false,profession:'',whatsapp:'',commune:'',
+      neverExpires:true,tabs:[],assignedShelves:[],spiritualAccess:false,canLoan:false
+    });
+
     const url=`${window.location.origin}/${code}`;
     sucEl.innerHTML=`✅ <strong>Bibliothèque "${name}" créée !</strong><br>🔗 <a href="${url}" target="_blank" style="color:var(--ok);font-weight:700">${url}</a><br>👤 Code admin : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${adm}</code>`;
     sucEl.style.display='block';
@@ -932,17 +765,13 @@ async function changePwd(){
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>Enregistrement…';
   try{
     const h=await sha256(np);
-    const r=await fetch(`${FS_ROOT}/_spaces/__superadmin__`,{
-      method:'PATCH',headers:fbH(),
-      body:JSON.stringify({fields:{pwdHash:{stringValue:h},updatedAt:{stringValue:new Date().toISOString()}}})
-    });
-    if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.status);}
+    await sbIns('super_admin_config',{id:1,pwdHash:h,updatedAt:new Date().toISOString()});
     document.getElementById('p-new').value='';
     document.getElementById('p-conf').value='';
     document.getElementById('warn-pwd').style.display='none';
     cM('m-pwd');
-    alert('✅ Mot de passe mis à jour dans Firebase !\nValable sur tous les navigateurs et appareils.');
-  }catch(e){err.textContent='Erreur Firebase : '+e.message;console.error(e);}
+    alert('✅ Mot de passe mis à jour dans Supabase !\nValable sur tous les navigateurs et appareils.');
+  }catch(e){err.textContent='Erreur : '+e.message;console.error(e);}
   finally{btn.disabled=false;btn.textContent='💾 Enregistrer';}
 }
 

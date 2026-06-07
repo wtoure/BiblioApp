@@ -27,14 +27,14 @@ Application web **SPA vanilla JS** de gestion de bibliothèque pour le Centre Cu
 
 ```
 URL  : https://ktknaajjtmhevsafrpjv.supabase.co
-KEY  : eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt0a25hYWpqdG1oZXZzYWZycGp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjQzMTMsImV4cCI6MjA5NjM0MDMxM30.-g5AA1lnvMYEOp9HrHayTant_FXKhJRoW65oX9JOwJ4
+KEY  : eyJhbGci... (clé anon publique — voir app.js/admin.html)
 ```
 
-Credentials Firebase conservés pour la migration (projet `comoe-biblio-f28d7`) :
-```
-FB_KEY     : AIzaSyBIqsfTSS3ypsHc_dQrKhYpB8pIbF9adBY
-FB_PROJECT : comoe-biblio-f28d7
-```
+Note : la clé anon Supabase est intentionnellement publique (client-side par design Supabase).
+La clé `service_role` (privée) n'est jamais committée — accessible depuis le dashboard Supabase.
+
+Firebase (projet `comoe-biblio-f28d7`) — **migration terminée, credentials retirés du code**.
+Si relance nécessaire : `FB_KEY=<nouvelle-clé> node migrate-firebase-to-supabase.js`
 
 ---
 
@@ -69,7 +69,7 @@ Les fonctions `sbGetDoc('config', ...)` et `sbGetDoc('counters', ...)` filtrent 
 ## Routing URL
 
 ```
-/                    → SPACE_ID = DEFAULT_SPACE ('comoe') — interface admin/login
+/                    → SPACE_ID = DEFAULT_SPACE ('f9a0-60a0-5274') — interface admin/login
 /[code]              → SPACE_ID = code — interface admin/login de l'espace
 /book/[code]         → IS_PUBLIC_VIEW = true — catalogue public sans connexion
 /~admin              → Super-admin (gestion de tous les espaces)
@@ -154,13 +154,18 @@ Types de catalogue : `academique` / `spirituel` (colonne `catType` dans `books`)
 
 ## Données actuelles (Supabase)
 
-À la date de la migration (juin 2026), l'état de la base test :
-- Espace `comoe` : Bibliothèque Centre Comoé — actif
-- 3 livres de test (Le Petit Prince, L'Alchimiste, Bofoya Kunde)
-- 1 utilisateur : `admin` / role `admin`
+Migration réelle effectuée le 7 juin 2026 — données de production dans Supabase :
+- Espace `f9a0-60a0-5274` : Bibliothèque Centre Culturel Comoé — actif
+- **1 810 livres** réels migrés depuis Firebase
+- **8 utilisateurs** réels (abbrevs : admin2026, jvc, romeo, kouadio, kone, kadjo, junior, kouadio@1)
+- 3 sessions de demande, 4 demandes de livres, 9 inscriptions, 10 logs de connexion, 2 shelf checks
 
-**Migration Firebase en attente** : ~1 800 livres réels et ~10 utilisateurs réels sont dans Firebase (`comoe-biblio-f28d7`).
-Script prêt : `migrate-firebase-to-supabase.js` — à lancer avec `node migrate-firebase-to-supabase.js` quand le quota Firebase sera réinitialisé (quotidien, ~8h heure CIV).
+**Firebase source** : projet `comoe-biblio-f28d7`, espace ID `f9a0-60a0-5274` (doc auto-généré).
+Les données Firebase sous `spaces/f9a0-60a0-5274/books` etc. (sans underscore).
+
+**RLS users** : la table `users` avait une policy `Isolation par espace` (basée sur `current_setting('app.space_code')`) remplacée par `allow_all` pour la migration. À restreindre ultérieurement.
+
+Script : `migrate-firebase-to-supabase.js` — idempotent, peut être relancé sans risque de doublons (upsert).
 
 ---
 
@@ -179,7 +184,7 @@ http://localhost:8080/
 node migrate-firebase-to-supabase.js
 ```
 
-**Limitation locale** : la page publique `/book/comoe` n'est pas accessible en local — uniquement sur Netlify.
+**Limitation locale** : la page publique `/book/f9a0-60a0-5274` n'est pas accessible en local — uniquement sur Netlify.
 
 ---
 
