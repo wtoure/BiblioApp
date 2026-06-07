@@ -235,6 +235,7 @@ async function saveContact(){
   const msg=document.getElementById('adm-contact-msg');
   try{
     await sbUpd('config','main',{contact:num,contactName:name,meetingPlace:place,meetingTime:time,countryCode:countryCode,shortLink});
+    _cachePut({config:cfg});
     if(msg){msg.style.color='#16a34a';msg.textContent='✅ Enregistré';setTimeout(()=>{if(msg)msg.textContent='';},3000);}
   }catch(e){if(msg){msg.style.color='#dc2626';msg.textContent='Erreur : '+e.message;}}
 }
@@ -955,7 +956,7 @@ async function startRealtimeSync(){
   });
   _rtChannel.on('postgres_changes',
     {event:'*',schema:'public',table:'space_config',filter:`space_code=eq.${SPACE_ID}`},
-    payload=>{if(payload.new)cfg=Object.assign({...cfg},payload.new);_refreshView(['config']);});
+    payload=>{if(payload.new){cfg=Object.assign({...cfg},payload.new);_cachePut({config:cfg});}_refreshView(['config']);});
   _rtChannel.on('postgres_changes',
     {event:'*',schema:'public',table:'space_counters',filter:`space_code=eq.${SPACE_ID}`},
     payload=>{if(payload.new){const d=payload.new;nxB=d.nxB||nxB;nxU=d.nxU||nxU;nxR=d.nxR||nxR;nxS=d.nxS||nxS;nxL=d.nxL||nxL;nxSC=d.nxSC||nxSC;nxReg=d.nxReg||nxReg;}});
@@ -1914,20 +1915,30 @@ async function opPropCom(){
     await sbSet('sessions',sess.id,sess);
     cfg.propMotif=m;cfg.openAll=true;cfg.openUntil=d||null;cfg.currentSessionId=sess.id;
     await sbSaveCfg();await sbSaveCounters();
+    _cachePut({config:cfg,sessions});
     sessions.push(sess);
     rComAuth();rSessList();
     document.getElementById('adm-motif').value=m;rPropSt();
   }catch(e){nxS--;console.error('[opPropCom]',e);alert('❌ Erreur : la session n\'a pas été ouverte.\n'+e.message);}
 }
 async function clPropCom(){
-  if(cfg.currentSessionId){
-    const s=sessions.find(x=>x.id==cfg.currentSessionId);
-    if(s){s.closed=true;s.closedDate=todayStr();try{await sbUpd('sessions',s.id,{closed:true,closedDate:s.closedDate});}catch(e){console.error('[clProp]',e.message);_showSyncToast('⚠️ Fermeture non sauvegardée');}}
+  const sessId=cfg.currentSessionId;
+  const savedCfg={openAll:cfg.openAll,openUntil:cfg.openUntil,currentSessionId:cfg.currentSessionId};
+  try{
+    if(sessId){
+      const s=sessions.find(x=>x.id==sessId);
+      if(s){await sbUpd('sessions',s.id,{closed:true,closedDate:todayStr()});s.closed=true;s.closedDate=todayStr();}
+    }
+    cfg.openAll=false;cfg.openUntil=null;cfg.currentSessionId=null;
+    await sbSaveCfg();
+    _cachePut({config:cfg,sessions});
+    document.getElementById('com-until').value='';
+    rComAuth();rSessList();rPropSt();
+  }catch(e){
+    Object.assign(cfg,savedCfg);
+    console.error('[clPropCom]',e);
+    alert('❌ Erreur lors de la fermeture : '+e.message);
   }
-  cfg.openAll=false;cfg.openUntil=null;cfg.currentSessionId=null;
-  document.getElementById('com-until').value='';
-  rComAuth();rSessList();rPropSt();
-  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2114,9 +2125,11 @@ async function savePdfConfig(btn){
   if(!modal){alert('Erreur : modal introuvable.');return;}
   const checked=[...modal.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
   if(!checked.length){alert('Sélectionnez au moins une colonne.');return;}
+  const oldFields=cfg.pdfFields;
   cfg.pdfFields=checked;
   modal.remove();
-  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
+  try{await sbSaveCfg();_cachePut({config:cfg});}
+  catch(e){cfg.pdfFields=oldFields;console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 function exportPDF(){
   const approved=requests.filter(r=>r.status==='approved');
@@ -2875,18 +2888,20 @@ function onLogoFile(input){
       canvas.width=w;canvas.height=ht;
       canvas.getContext('2d').drawImage(img,0,0,w,ht);
       const b64=canvas.toDataURL('image/png',0.92);
-      cfg.logoB64=b64;
-      applyLogo(b64);
-      try{await sbSaveCfg();}catch(err){console.warn('Logo non sauvegardé:',err);}
+      const oldLogo=cfg.logoB64;
+      cfg.logoB64=b64;applyLogo(b64);
+      try{await sbSaveCfg();_cachePut({config:cfg});}
+      catch(err){cfg.logoB64=oldLogo;applyLogo(oldLogo);console.warn('Logo non sauvegardé:',err);_showSyncToast('⚠️ Logo non sauvegardé');}
     };
     img.src=e.target.result;
   };
   reader.readAsDataURL(file);
 }
 async function clearLogo(){
-  cfg.logoB64=null;
-  applyLogo(null);
-  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
+  const oldLogo=cfg.logoB64;
+  cfg.logoB64=null;applyLogo(null);
+  try{await sbSaveCfg();_cachePut({config:cfg});}
+  catch(e){cfg.logoB64=oldLogo;applyLogo(oldLogo);console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 let ufPhotoB64=null;
 function onMbrPhoto(input){
@@ -3298,20 +3313,30 @@ async function opProp(){
     await sbSet('sessions',sess.id,sess);
     cfg.propMotif=m;cfg.openAll=true;cfg.openUntil=d||null;cfg.currentSessionId=sess.id;
     await sbSaveCfg();await sbSaveCounters();
+    _cachePut({config:cfg,sessions});
     sessions.push(sess);
     rPropSt();rAdmUs();document.getElementById('com-motif').value=m;
   }catch(e){nxS--;console.error('[opProp]',e);alert('❌ Erreur : la session n\'a pas été ouverte.\n'+e.message);}
 }
 async function clProp(){
-  if(cfg.currentSessionId){
-    const s=sessions.find(x=>x.id==cfg.currentSessionId);
-    if(s){s.closed=true;s.closedDate=todayStr();try{await sbUpd('sessions',s.id,{closed:true,closedDate:s.closedDate});}catch(e){console.error('[clProp]',e.message);_showSyncToast('⚠️ Fermeture non sauvegardée');}}
+  const sessId=cfg.currentSessionId;
+  const savedCfg={openAll:cfg.openAll,openUntil:cfg.openUntil,currentSessionId:cfg.currentSessionId,propMotif:cfg.propMotif};
+  try{
+    if(sessId){
+      const s=sessions.find(x=>x.id==sessId);
+      if(s){await sbUpd('sessions',s.id,{closed:true,closedDate:todayStr()});s.closed=true;s.closedDate=todayStr();}
+    }
+    cfg.openAll=false;cfg.openUntil=null;cfg.currentSessionId=null;cfg.propMotif='';
+    await sbSaveCfg();
+    _cachePut({config:cfg,sessions});
+    document.getElementById('pun').value='';
+    document.getElementById('adm-motif').value='';
+    rPropSt();rAdmUs();updRB();
+  }catch(e){
+    Object.assign(cfg,savedCfg);
+    console.error('[clProp]',e);
+    alert('❌ Erreur lors de la fermeture : '+e.message);
   }
-  cfg.openAll=false;cfg.openUntil=null;cfg.currentSessionId=null;cfg.propMotif='';
-  document.getElementById('pun').value='';
-  document.getElementById('adm-motif').value='';
-  rPropSt();rAdmUs();updRB();
-  try{await sbSaveCfg();}catch(e){console.error('[sbSaveCfg]',e.message);_showSyncToast('⚠️ Config non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -3404,11 +3429,12 @@ async function toggleIndivSpiritual(id,v){
 async function toggleCatAccess(role,type,v){
   if(!cfg.catAccess)cfg.catAccess={member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
   if(!cfg.catAccess[role])cfg.catAccess[role]=['academique'];
+  const oldAccess=[...(cfg.catAccess[role])];
   if(v){if(!cfg.catAccess[role].includes(type))cfg.catAccess[role].push(type);}
   else{cfg.catAccess[role]=cfg.catAccess[role].filter(x=>x!==type);}
-  /* Re-rendre immédiatement — ne pas attendre le realtime Supabase */
   rCatAccessPanel();
-  try{await sbSaveCfg();}catch(e){console.warn('[toggleCatAccess]',e);}
+  try{await sbSaveCfg();_cachePut({config:cfg});}
+  catch(e){cfg.catAccess[role]=oldAccess;rCatAccessPanel();console.warn('[toggleCatAccess]',e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 /* ═══════════════════════════════════════════════════════════════
    DIAGNOSTIC — Détection des anomalies de données
@@ -4613,13 +4639,16 @@ async function clearShelfHistory(){if(!_requireAdmin('clearShelfHistory'))return
   if(!shelfChecks.length)return;
   if(!confirm(`Vider l'historique des ${shelfChecks.length} vérification(s) d'étagères ?\n\nCette action est irréversible.`))return;
   const toDelete=[...shelfChecks];
-  shelfChecks=[];
-  rAdmShelves();
-  /* Supprimer de Supabase */
+  const deleted=[];
   for(const c of toDelete){
-    try{await sbDel('shelfChecks',c.id);}catch(e){console.warn('[clearShelfHistory]',c.id,e.message);}
+    try{await sbDel('shelfChecks',c.id);deleted.push(c.id);}catch(e){console.warn('[clearShelfHistory]',c.id,e.message);}
   }
-  _showSyncToast('🗑️ Historique vidé');
+  if(deleted.length){
+    shelfChecks=shelfChecks.filter(c=>!deleted.includes(c.id));
+    _cachePut({shelfChecks});
+  }
+  rAdmShelves();
+  _showSyncToast(deleted.length<toDelete.length?'⚠️ Historique partiellement vidé':'🗑️ Historique vidé');
 }
 
 /* ── Marquer la vérification d'une étagère terminée ── */
