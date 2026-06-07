@@ -1729,6 +1729,7 @@ async function rqCf(){
     await sbSet('requests',entry.id,entry);
     await sbSaveCounters();
     requests.push(entry);
+    _cachePut({requests});
     gtoSt(3);updPDFBtn();updRB();
   }catch(e){
     nxR--;
@@ -1915,8 +1916,8 @@ async function opPropCom(){
     await sbSet('sessions',sess.id,sess);
     cfg.propMotif=m;cfg.openAll=true;cfg.openUntil=d||null;cfg.currentSessionId=sess.id;
     await sbSaveCfg();await sbSaveCounters();
-    _cachePut({config:cfg,sessions});
     sessions.push(sess);
+    _cachePut({config:cfg,sessions});
     rComAuth();rSessList();
     document.getElementById('adm-motif').value=m;rPropSt();
   }catch(e){nxS--;console.error('[opPropCom]',e);alert('❌ Erreur : la session n\'a pas été ouverte.\n'+e.message);}
@@ -3192,6 +3193,7 @@ async function savU(){if(!_requirePrivileged('savU'))return;
       await sbSet('users',newId,nu);
       /* 4. Seulement si Supabase confirme : ajouter au tableau local */
       if(!users.find(u=>String(u.id)===String(newId)))users.push(nu);
+      _cachePut({users});
     }catch(e){
       console.error('[savU] Échec sauvegarde Supabase:',e);
       alert('❌ Erreur de sauvegarde : '+e.message+'\n\nLe compte n\'a pas été créé. Vérifiez votre connexion et réessayez.');
@@ -3313,8 +3315,8 @@ async function opProp(){
     await sbSet('sessions',sess.id,sess);
     cfg.propMotif=m;cfg.openAll=true;cfg.openUntil=d||null;cfg.currentSessionId=sess.id;
     await sbSaveCfg();await sbSaveCounters();
-    _cachePut({config:cfg,sessions});
     sessions.push(sess);
+    _cachePut({config:cfg,sessions});
     rPropSt();rAdmUs();document.getElementById('com-motif').value=m;
   }catch(e){nxS--;console.error('[opProp]',e);alert('❌ Erreur : la session n\'a pas été ouverte.\n'+e.message);}
 }
@@ -4611,6 +4613,7 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
     /* 5. Seulement si TOUT réussit : mettre à jour l'état local */
     reg.status='approved';reg.assignedRole=role;reg.createdAbbrev=abbrev;reg.createdUserId=newId;reg.processedAt=processedAt;
     if(!users.find(u=>String(u.id)===String(newId)))users.push(nu);
+    _cachePut({users,registrations});
     rAdmRegistrations();
     try{rAdmUs();}catch(e){}
     _showSyncToast('✅ Compte créé — code : '+abbrev);
@@ -4629,6 +4632,7 @@ async function rejectRegistration(id){if(!_requireAdmin('rejectRegistration'))re
     await sbUpd('registrations',id,{status:'rejected',processedAt});
     /* Local seulement si Supabase réussit */
     reg.status='rejected';reg.processedAt=processedAt;
+    _cachePut({registrations});
     rAdmRegistrations();
     _showSyncToast('Demande rejetée');
   }catch(e){console.error('[rejectRegistration]',e.message);alert('❌ Erreur : '+e.message);}
@@ -5686,6 +5690,7 @@ async function confirmLoan(){
       requestedAt:now,approvedAt:isResidentLoan?now:null,status:loanStatus,dueDate,returnedAt:null};
     await sbSet('loans',loanId,loan);
     loans.push(loan);
+    _cachePut({loans});
     if(isResidentLoan){
       /* Résident : livre marqué emprunté ou toujours disponible selon nb exemplaires restants */
       const activeLoansForBook=loans.filter(x=>x.bookId==_loanBookId&&(x.status==='active'||x.status==='pending_return')&&x.id!==loanId).length;
@@ -5693,6 +5698,7 @@ async function confirmLoan(){
       const newStatus=activeLoansForBook+1>=copies?'borrowed':'available';
       b.status=newStatus;b.borrowedBy=curUser.prenom+' '+curUser.nom;b.borrowedUntil=dueDate;
       await sbUpd('books',_loanBookId,{status:newStatus,borrowedBy:b.borrowedBy,borrowedUntil:dueDate,activeLoans:activeLoansForBook+1});
+      _cachePut({books});
     }
     cM('m-loan');
     rCat();
@@ -5709,6 +5715,7 @@ async function deleteLoanHistory(loanId){
   try{
     await sbDel('loans',loanId);
     const idx=loans.findIndex(x=>x.id==loanId);if(idx!==-1)loans.splice(idx,1);
+    _cachePut({loans});
     rLoans('active');rAdmLoans();updAdmLoansBadge();
   }catch(e){alert('Erreur : '+e.message);}
 }
@@ -5718,9 +5725,14 @@ async function bulkDeleteLoanHistory(){
   if(!finalLoans.length){alert('Aucun historique terminé à purger.\nSeuls les emprunts "Retourné" et "Rejeté" peuvent être supprimés.');return;}
   if(!confirm('Supprimer définitivement tout l\'historique terminé ?\n\n'+finalLoans.length+' enregistrement(s) concerné(s) (Retournés + Rejetés).\n\n⚠️ Action irréversible — les emprunts actifs et en attente ne sont PAS touchés.'))return;
   let deleted=0,errors=0;
+  const deletedIds=new Set();
   for(const l of finalLoans){
-    try{await sbDel('loans',l.id);deleted++;}
+    try{await sbDel('loans',l.id);deleted++;deletedIds.add(l.id);}
     catch(e){errors++;console.warn('[purge]',l.id,e.message);}
+  }
+  if(deletedIds.size){
+    loans.splice(0,loans.length,...loans.filter(l=>!deletedIds.has(l.id)));
+    _cachePut({loans});
   }
   rLoans('active');rAdmLoans();updAdmLoansBadge();
   alert(deleted+' enregistrement(s) supprimé(s).'+(errors?'\n⚠️ '+errors+' erreur(s).':''));
@@ -5734,6 +5746,7 @@ async function markReturned(loanId){
     const now=new Date().toISOString();
     await sbUpd('loans',loanId,{status:'pending_return',returnedAt:now});
     l.status='pending_return';l.returnedAt=now;
+    _cachePut({loans});
     /* Le livre reste "borrowed" jusqu\'à validation admin */
     rLoans('active');rCat();updAdmLoansBadge();
     alert('Retour déclaré. En attente de validation par l\'administrateur.');
@@ -5775,6 +5788,7 @@ async function approveLoan(loanId){
       borrowedUntil:newStatus==='borrowed'?l.dueDate:null,
       activeLoans:activeLoansForBook+1
     });
+    _cachePut({loans,books});
     rLoans('active');rAdmLoans();rCat();updAdmLoansBadge();
   }catch(e){alert('Erreur : '+e.message);console.error('[approveLoan]',e);}
 }
@@ -5788,6 +5802,7 @@ async function rejectLoan(loanId){
     await sbUpd('loans',loanId,{status:'rejected'});
     /* Mise à jour locale */
     l.status='rejected';l.rejectedAt=now;l.rejectedBy=curUser?.abbrev||'?';
+    _cachePut({loans});
     /* Purger l'historique du membre : garder seulement les 5 derniers emprunts terminés (returned/rejected) */
     const memberHistoric=loans
       .filter(x=>x.userId==l.userId&&(x.status==='returned'||x.status==='rejected'))
@@ -5819,6 +5834,7 @@ async function validateReturn(loanId){
       if(stillActive===0){b.borrowedBy=null;b.borrowedUntil=null;upd.borrowedBy=null;upd.borrowedUntil=null;}
       await sbUpd('books',l.bookId,upd);
     }
+    _cachePut({loans,books});
     rLoans('active');rAdmLoans();rCat();updAdmLoansBadge();
     /* Purger l'historique du membre : garder seulement les 5 derniers emprunts terminés */
     const memberHistoric=loans
