@@ -3884,7 +3884,7 @@ function openPubRegister(){
         </div>
       </div>
       <div class="fg"><label class="ld">Commune <span style="color:#dc2626">*</span></label><input class="fi" id="reg-commune" placeholder="Ex : Cocody"/></div>
-      <div class="fg"><label class="ld">Profession</label><input class="fi" id="reg-profession" placeholder="Ex : Étudiant"/></div>
+      <div class="fg"><label class="ld">Profession</label><input class="fi" id="reg-profession" placeholder="Ex : Étudiant en Math"/></div>
       <div class="fg"><label class="ld">Email <span style="font-size:11px;color:var(--g400)">(optionnel)</span></label><input class="fi" id="reg-email" type="email"/></div>
       <p id="reg-err" style="color:#dc2626;font-size:13px;margin-top:8px;min-height:16px"></p>
       ${safe((_pubMeeting&&(_pubMeeting.place||_pubMeeting.time))?`
