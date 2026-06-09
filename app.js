@@ -1369,8 +1369,12 @@ function showCat(){
 function rCatTypeTabs(){
   const el=document.getElementById('cat-type-tabs');if(!el)return;
   const _ca2=cfg.catAccess||{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
-  /* Admin voit toujours les deux catalogues */
-  const allowed=curUser&&curUser.role==='admin'?['academique','spirituel']:(curUser?(_ca2[curUser.role]||['academique']):['academique']);
+  /* Admin voit toujours les deux catalogues.
+     Pour les autres rôles : le rôle doit autoriser spirituel ET l'utilisateur doit avoir spiritualAccess=true */
+  const _roleAllowed=curUser&&curUser.role==='admin'?['academique','spirituel']:(curUser?(_ca2[curUser.role]||['academique']):['academique']);
+  const allowed=curUser&&curUser.role!=='admin'
+    ?_roleAllowed.filter(t=>t!=='spirituel'||!!curUser.spiritualAccess)
+    :_roleAllowed;
   if(allowed.length<=1){el.innerHTML='';catTypeFilter='all';return;}
   const tabs=[{k:'all',l:'Tous les livres',ico:'📚'},{k:'academique',l:'Académique',ico:'📚'},{k:'spirituel',l:'Spirituel',ico:'🕊️'}];
   el.innerHTML=tabs.filter(t=>t.k==='all'||allowed.includes(t.k)).map(t=>html`
@@ -1390,10 +1394,9 @@ function gFilt(){
   const avail=books.filter(b=>{
     if(b.status==='retired')return false;
     const bType=b.catType||'academique';
-    /* Accès individuel spirituel override */
-    if(bType==='spirituel'&&!isAdmin&&curUser&&!allowedCats.includes('spirituel')&&!curUser.spiritualAccess)return false;
-    if(bType==='spirituel'&&(isAdmin||allowedCats.includes('spirituel')||curUser?.spiritualAccess)){}
-    else if(!allowedCats.includes(bType))return false;
+    /* Accès spirituel : le rôle doit autoriser ET l'utilisateur doit avoir spiritualAccess=true */
+    if(bType==='spirituel'&&!isAdmin&&!(allowedCats.includes('spirituel')&&curUser?.spiritualAccess))return false;
+    else if(bType!=='spirituel'&&!allowedCats.includes(bType))return false;
     if(catTypeFilter&&catTypeFilter!=='all'&&bType!==catTypeFilter)return false;
     return true;
   });
