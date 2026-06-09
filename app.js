@@ -405,7 +405,8 @@ async function loadAllData(){
       if(g)g.innerHTML=html`<div style="grid-column:1/-1;text-align:center;padding:48px 16px">
         <div style="font-size:32px;margin-bottom:10px">${icon}</div>
         <div style="font-size:14px;color:var(--g600);font-weight:500">${msg}</div>
-        ${detail?`<div style="font-size:12px;color:var(--g400);margin-top:6px;max-width:400px;margin-left:auto;margin-right:auto;line-height:1.6">${detail}</div>`:''}
+        ${safe(detail?`<div style="font-size:12px;color:var(--g400);margin-top:6px;max-width:400px;margin-left:auto;margin-right:auto;line-height:1.6">${esc(detail)}</div>`:'')}
+
       </div>`;
     };
     _status('📚','Chargement du catalogue…');
@@ -754,8 +755,10 @@ function _refreshView(cols){
     if(vid==='vc'&&(hB||hC))rCat();
     else if(vid==='vloans'&&(hL||hU))rLoans();
     else if(vid==='vadm'){const ap=document.querySelector('#vadm .ap.active');const pid=ap?ap.id:'';
+      const hReg=cols.includes('registrations');
       if(pid==='ap-bk'&&hB)rAdmBk();else if(pid==='ap-rq'&&hR)rAdmRq();
       else if(pid==='ap-us'&&hU)rAdmUs();else if(pid==='ap-loans_adm'&&(hL||hU))rAdmLoans();
+      else if(pid==='ap-reg'&&hReg)rAdmRegistrations();
       else if(pid==='ap-st')rAdmStat();}
     else if(vid==='vcom'&&(hR||hB))rComT();
     else if(vid==='vca'&&hB)rCABk();
@@ -1325,7 +1328,7 @@ function showMyLoans(){
     <div style="padding:20px 24px">
       ${myLoans.length===0&&past.length===0?'<p style="color:var(--g400);text-align:center;padding:24px 0">Aucun emprunt en cours ou récent.</p>':''}
       ${myLoans.length?`<h4 style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">📖 En cours (${myLoans.length})</h4>${myLoans.map(rows).join('')}`:''}
-      ${past.length?`<h4 style="font-size:14px;font-weight:700;color:var(--g500);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.5px">📋 Historique récent</h4>${past.map(l=>{const isRej=l.status==='rejected';return html`<div style="background:${isRej?'#fff5f5':'var(--g50)'};border-radius:10px;padding:12px 16px;margin-bottom:8px;border:1px solid ${isRej?'#fca5a5':'var(--g200)'}"><div style="font-weight:600;font-size:14px;color:var(--navy)">${l.bookTitle}</div><div style="font-size:12px;margin-top:4px">${isRej?'<span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#10060; Demande rejetée</span>':'<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#9989; Retourné</span>'} <span style="color:var(--g400)">${isRej?(l.rejectedAt?new Date(l.rejectedAt).toLocaleDateString('fr-FR'):'—'):(l.returnedAt?new Date(l.returnedAt).toLocaleDateString('fr-FR'):'—')}</span></div></div>`;}).join('')}`:''}
+      ${past.length?`<h4 style="font-size:14px;font-weight:700;color:var(--g500);margin:16px 0 10px;text-transform:uppercase;letter-spacing:.5px">📋 Historique récent</h4>${past.map(l=>{const isRej=l.status==='rejected';return html`<div style="background:${isRej?'#fff5f5':'var(--g50)'};border-radius:10px;padding:12px 16px;margin-bottom:8px;border:1px solid ${isRej?'#fca5a5':'var(--g200)'}"><div style="font-weight:600;font-size:14px;color:var(--navy)">${l.bookTitle}</div><div style="font-size:12px;margin-top:4px">${safe(isRej?'<span style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#10060; Demande rejetée</span>':'<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">&#9989; Retourné</span>')} <span style="color:var(--g400)">${isRej?(l.rejectedAt?new Date(l.rejectedAt).toLocaleDateString('fr-FR'):'—'):(l.returnedAt?new Date(l.returnedAt).toLocaleDateString('fr-FR'):'—')}</span></div></div>`;}).join('')}`:''}
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -1430,10 +1433,11 @@ function rCat(page=catPage){
     <div class="bcv" style="background:${cg(b.cat)}">${b.emoji||ci(b.cat)}</div>
     <div class="bbd">
       <span class="ctg" style="background:${cb(b.cat)};color:${cf(b.cat)}">${b.cat}</span>
-      ${(b.catType||'academique')==='spirituel'?'<span class="ctg" style="background:#f3e8ff;color:#6b21a8;font-size:10px">🕊️ Spirituel</span>':''}
+      ${safe((b.catType||'academique')==='spirituel'?'<span class="ctg" style="background:#f3e8ff;color:#6b21a8;font-size:10px">🕊️ Spirituel</span>':'')}
       <div class="btt">${b.titre}</div>
       <div class="bat">✍️ ${b.auteur||'—'}</div>
-      ${b.salle?`<div class="blo">📍 ${b.salle}${b.placard?' · '+b.placard:''}${b.etagere?'-'+b.etagere:''}</div>`:''}
+      ${safe(b.salle?`<div class="blo">📍 ${esc(b.salle)}${b.placard?` · ${esc(b.placard)}`:''}${b.etagere?`-${esc(b.etagere)}`:''}</div>`:'')}
+
       <div class="bmt"><span>${b.lang||'—'}</span><span>${b.annee||'—'}</span></div>
     </div>
   </div>`).join('');
@@ -1531,8 +1535,9 @@ function showMyRequests(){
           <span style="background:var(--navy);color:white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:2px">${i+1}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:15px;color:var(--navy);word-break:break-word">${r.titre||'—'}</div>
-            ${r.auteur?`<div style="font-size:13px;color:var(--g500);margin-top:3px">✍️ ${r.auteur}</div>`:''}
-            ${r.desc?`<div style="font-size:12px;color:var(--g400);margin-top:5px;font-style:italic;line-height:1.5">${r.desc}</div>`:''}
+            ${safe(r.auteur?`<div style="font-size:13px;color:var(--g500);margin-top:3px">✍️ ${esc(r.auteur)}</div>`:'')}
+            ${safe(r.desc?`<div style="font-size:12px;color:var(--g400);margin-top:5px;font-style:italic;line-height:1.5">${esc(r.desc)}</div>`:'')}
+
           </div>
         </div>
       </div>`).join('');
@@ -1541,9 +1546,10 @@ function showMyRequests(){
         <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--g400);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--g200)">
           📅 Session du ${dateLabel} — ${reqs.length} livre(s) soumis
         </div>
-        ${booksHtml}
+        ${safe(booksHtml)}
       </div>`;
   }).join('');
+
   /* Ouvrir un modal dédié */
   const overlay=document.createElement('div');
   overlay.id='m-my-requests-overlay';
@@ -1570,17 +1576,17 @@ function showMyRequests(){
       </div>
       <!-- Corps scrollable -->
       <div style="flex:1;overflow-y:auto;padding:18px 22px;user-select:text">
-        ${myReqs.length===0
+        ${safe(myReqs.length===0
           ?'<div style="text-align:center;padding:40px;color:var(--g400)">Vous n\'avez encore soumis aucun livre.</div>'
-          :sessionsHtml}
+          :sessionsHtml)}
       </div>
-      ${myReqs.length>0?`
+      ${safe(myReqs.length>0?`
       <!-- Pied : astuce copier-coller -->
       <div style="border-top:1px solid var(--g100);padding:12px 22px;background:var(--g50);flex-shrink:0">
         <div style="font-size:12px;color:var(--g400);display:flex;align-items:center;gap:6px">
           💡 <span>Pour copier un titre ou un auteur, sélectionnez le texte directement dans cette liste.</span>
         </div>
-      </div>`:''}
+      </div>`:'')}
     </div>`;
   document.body.appendChild(overlay);
 }
@@ -1593,7 +1599,7 @@ function showDet(id){
   const eB=e=>e?`<span class="badge ${e==='Bon'?'bbon':e==='Moyen'?'bmoy':'bmauv'}">${e}</span>`:'';
   const aB=a=>a?`<span class="badge ${a==='Nouveau'?'bnv':'banc'}">${a}</span>`:'';
   const priv=isPrivileged();
-  document.getElementById('mdb').innerHTML=html`
+  document.getElementById('mdb').innerHTML=`
     <div class="dh">
       <div class="dcv" style="background:${cg(b.cat)}">${b.emoji||ci(b.cat)}</div>
       <div class="di"><h2>${esc(b.titre)}</h2><div class="dat">✍️ ${esc(b.auteur)||'—'}</div>
@@ -1823,9 +1829,9 @@ function rComT(){
 /* Supprimer une demande déjà validée ou rejetée */
 async function delRq(id){
   const r=requests.find(x=>x.id==id);if(!r)return;
-  if(r.status==='pending'){alert('Une demande en attente ne peut pas être supprimée. Traitez-la d\'abord.');return;}
   if(!confirm(`Supprimer définitivement la demande "${r.titre}" ?\n\nCette action est irréversible.`))return;
   requests=requests.filter(x=>x.id!=id);
+  _cachePut({requests});
   rAdmRq();rComT&&rComT();updPDFBtn();
   try{await sbDel('requests',id);}catch(e){console.warn('[delRq]',e.message);}
   _showSyncToast('🗑️ Demande supprimée');
@@ -1834,6 +1840,7 @@ async function chgSt(id,s,src){
   const r=requests.find(x=>x.id==id);if(!r)return;
   r.status=s;
   try{await sbUpd('requests',id,{status:s});}catch(e){console.error('[chgSt]',e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+  _cachePut({requests});
   if(src==='com'){rComSt();rComT();}else rAdmRq();
   updPDFBtn();
 }
@@ -2005,6 +2012,7 @@ async function bulkTogP(v){
     u.canPropose=v;
     try{await sbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
   }
+  _cachePut({users});
   mbrSelected.clear();rComUsers();
 }
 async function comTogAll(v){
@@ -2013,18 +2021,19 @@ async function comTogAll(v){
     u.canPropose=v;
     try{await sbUpd('users',u.id,{canPropose:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
   }
+  _cachePut({users});
   rComUsers();
 }
 async function comTogP(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
   u.canPropose=v;
   rComUsers();
-  try{await sbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{canPropose:v});_cachePut({users});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 async function comSetUntil(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
   u.propUntil=v||null;
-  try{await sbUpd('users',id,{propUntil:v||null});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{propUntil:v||null});_cachePut({users});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2383,6 +2392,7 @@ async function delBk(id){
   if(!confirm(`Supprimer définitivement "${b.titre}" ?
 Cette action est irréversible.`))return;
   const idx=books.findIndex(x=>x.id==id);if(idx!==-1)books.splice(idx,1);
+  _cachePut({books});
   rAdmBk();rCat();
   try{await sbDel('books',id);}catch(e){console.error('[delBk]',e.message);alert('❌ Erreur suppression livre : '+e.message);}
 }
@@ -2393,12 +2403,14 @@ async function togBkStatus(id,src){
     const prevSt=b.status;
     b.status='available';b.missingAt=null;b.missingNote=null;
     try{await sbUpd('books',id,{status:'available',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    _cachePut({books});
     _logBookChange(id,b.titre,{status:{from:prevSt,to:'available'}});
   }else{
     const nxt=b.status==='retired'?'available':'retired';
     if(nxt==='retired'&&!confirm(`Retirer "${b.titre}" du catalogue ?`))return;
     const prevSt2=b.status;b.status=nxt;
     try{await sbUpd('books',id,{status:nxt,lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:new Date().toISOString(),lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    _cachePut({books});
     _logBookChange(id,b.titre,{status:{from:prevSt2,to:nxt}});
   }
   if(src==='ca')rCABk();else rAdmBk();rCat();
@@ -2411,6 +2423,7 @@ async function reportMissing(id){
     if(!confirm(`"${b.titre}" est déjà signalé introuvable.\nCliquez OK pour le marquer comme retrouvé.`))return;
     b.status='available';b.missingAt=null;b.missingNote=null;
     try{await sbUpd('books',id,{status:'available'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+    _cachePut({books});
     cM('mdet');rCat();rAdmBk();_showSyncToast('✅ Livre retrouvé — remis disponible');return;
   }
   const note=prompt(`Signaler "${b.titre}" comme introuvable à son emplacement.\n\nNote optionnelle (ex : vérifié le ${new Date().toLocaleDateString('fr-FR')}, absent de l'étagère) :`,'');
@@ -2418,6 +2431,7 @@ async function reportMissing(id){
   const now=new Date().toISOString();
   b.status='missing';b.missingAt=now;b.missingNote=note||'';
   try{await sbUpd('books',id,{status:'missing',lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'});}catch(e){console.error(e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
+  _cachePut({books});
   _logBookChange(id,b.titre,{status:{from:'available',to:'missing'},note:note||''});
   cM('mdet');rCat();rAdmBk();_showSyncToast('⚠️ Livre signalé introuvable');
 }
@@ -2567,7 +2581,7 @@ async function savBk(){
     etagere:document.getElementById('bfet').value.trim(),annee:parseInt(document.getElementById('bfyr').value)||null,
     expl:parseInt(document.getElementById('bfex').value)||1,ancienNouv:document.getElementById('bfan').value,
     etat:document.getElementById('bfet2').value,editeur:document.getElementById('bfed').value.trim(),
-    resume:document.getElementById('bfrs').value.trim(),emoji:'📖',featured};
+    resume:document.getElementById('bfrs').value.trim(),emoji:bfEid?(books.find(b=>b.id==bfEid)?.emoji||'📖'):'📖',featured};
   const now=new Date().toISOString();
   const who=curUser?.abbrev||'?';
   if(bfEid){
@@ -2580,6 +2594,7 @@ async function savBk(){
     try{
       await sbUpd('books',bfEid,updFields);
       if(i>=0)books[i]={...books[i],...updFields};
+      _cachePut({books});
       if(changedFields.length>0)_logBookChange(bfEid,d.titre,
         Object.fromEntries(changedFields.map(k=>([k,{from:existing?.[k],to:d[k]}]))));
     }catch(e){console.error('[savBk update]',e.message);alert('❌ Erreur mise à jour livre : '+e.message);return;}
@@ -2590,6 +2605,7 @@ async function savBk(){
       await sbSet('books',nb.id,nb);
       await sbSaveCounters();
       if(!books.find(b=>String(b.id)===String(nb.id)))books.push(nb);
+      _cachePut({books});
       _logBookChange(nb.id,nb.titre,{action:'ajout'});
     }catch(e){
       nxB--;/* Annuler l'incrément */
@@ -2617,19 +2633,19 @@ function rAdmRq(){
       <td>${r.auteur||'—'}</td><td style="font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.desc||'—'}</td>
       <td>${u?u.prenom+' '+u.nom:'—'}</td>
       <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic;font-size:12px;color:var(--gd)">${r.motif||'—'}</td>
-      <td style="min-width:120px">${simCell}</td>
+      <td style="min-width:120px">${safe(simCell)}</td>
       <td>${safe(sBdg(r.status))}</td>
       <td><input class="fi fi-l" value="${r.note||''}" placeholder="Commentaire…" style="padding:6px 10px;font-size:12px;min-width:120px" onchange="updN(${r.id},this.value)"/></td>
-      <td><select class="fi fi-l" style="padding:5px 8px;font-size:12px;width:auto" onchange="chgSt(${r.id},this.value,'adm')">
+      <td><div style="display:flex;align-items:center;gap:6px"><select class="fi fi-l" style="padding:5px 8px;font-size:12px;width:auto" onchange="chgSt(${r.id},this.value,'adm')">
         <option value="pending" ${r.status==='pending'?'selected':''}>⏳ En attente</option>
         <option value="approved" ${r.status==='approved'?'selected':''}>✅ Approuvée</option>
         <option value="rejected" ${r.status==='rejected'?'selected':''}>❌ Rejetée</option>
-      </select></td></tr>`;
+      </select><button type="button" onclick="delRq(${r.id})" title="Supprimer cette demande" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;flex-shrink:0">🗑️</button></div></td></tr>`;
   }).join('');
 }
 async function updN(id,v){
   const r=requests.find(x=>x.id==id);if(r)r.note=v;
-  try{await sbUpd('requests',id,{note:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('requests',id,{note:v});_cachePut({requests});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2667,6 +2683,7 @@ function rAdmUs(){
   else if(admUsFilter==='expired')filteredUsers=filteredUsers.filter(u=>u.expiresAt&&u.expiresAt<today3);
   else if(admUsFilter==='disabled')filteredUsers=filteredUsers.filter(u=>u.disabled);
   if(searchQ)filteredUsers=filteredUsers.filter(u=>(u.prenom+' '+u.nom+' '+u.abbrev).toLowerCase().includes(searchQ));
+  if(!curUser||curUser.role!=='admin')filteredUsers=filteredUsers.filter(u=>u.role!=='admin');
   const expiringSoon=users.filter(u=>u.expiresAt&&!u.disabled&&Math.ceil((new Date(u.expiresAt)-new Date(today3))/(86400*1000))<=30).length;
   const el_cnt=document.getElementById('adm-us-count');
   if(el_cnt)el_cnt.textContent=filteredUsers.length+(filteredUsers.length<users.length?' / '+users.length:'')+' membre(s)'+(expiringSoon?' \u23F3 '+expiringSoon+' expire(nt) bient\u00F4t':'');
@@ -2739,7 +2756,7 @@ function rAdmUs(){
 }
 async function togP(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;u.canPropose=v;rAdmUs();
-  try{await sbUpd('users',id,{canPropose:v});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{canPropose:v});_cachePut({users});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2815,7 +2832,7 @@ function openGuide(){
     </div>
     <div style="padding:20px">
       <div style="font-size:13px;color:#64748b;margin-bottom:14px">Voici tout ce que vous pouvez faire avec l'application :</div>
-      <div style="display:flex;flex-direction:column;gap:10px">${capsHtml}</div>
+      <div style="display:flex;flex-direction:column;gap:10px">${safe(capsHtml)}</div>
       <div style="margin-top:18px;padding:14px;background:#eff6ff;border-radius:11px;font-size:13px;color:#1d4ed8;line-height:1.6">
         💡 <strong>Astuce :</strong> utilisez le menu en haut de l'écran pour naviguer entre les différentes sections accessibles à votre compte.
       </div>
@@ -2863,7 +2880,7 @@ async function togDisable(id){if(!_requireAdmin('togDisable'))return;
   if(u.role==='admin'&&countAdmins()<=1&&!u.disabled){alert('⚠️ Seul administrateur.');return;}
   if(u.id==curUser.id&&!u.disabled){alert('⚠️ Vous ne pouvez pas désactiver votre propre compte.');return;}
   u.disabled=!u.disabled;rAdmUs();
-  try{await sbUpd('users',id,{disabled:u.disabled});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{disabled:u.disabled});_cachePut({users});}catch(e){console.error(e);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 /* ── Logo organisation ── */
 function applyLogo(b64){
@@ -3187,7 +3204,7 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     if(isPermanentRole){updFields.neverExpires=true;updFields.expiresAt=null;}
     else if(isNeverExp){updFields.expiresAt=null;}else if(expUpdVal){updFields.expiresAt=expUpdVal;}
     if(i>=0){users[i].neverExpires=isPermanentRole||isNeverExp;if(!isPermanentRole&&expUpdVal)users[i].expiresAt=expUpdVal;if(isPermanentRole)users[i].expiresAt=null;}
-    try{await sbUpd('users',ufEid,updFields);}catch(e){console.error(e);alert('❌ Erreur de mise à jour : '+e.message);}
+    try{await sbUpd('users',ufEid,updFields);_cachePut({users});}catch(e){console.error(e);alert('❌ Erreur de mise à jour : '+e.message);}
   } else {
     /* ── Création d'un nouveau compte ── */
     /* 1. Lire le compteur frais depuis Supabase pour éviter les collisions entre sessions */
@@ -3259,6 +3276,7 @@ async function delU(id){if(!_requireAdmin('delU'))return;
     await sbDel('users',id);
     await sbSet('deletedUsers',id,archived);
     const idx=users.findIndex(x=>x.id==id);if(idx!==-1)users.splice(idx,1);
+    _cachePut({users,loans,books});
     rAdmUs();rAdmDelUs();rCat();updAdmLoansBadge();
   }catch(e){console.error('[delU]',e.message);alert('❌ Erreur suppression compte : '+e.message);}
 }
@@ -3374,14 +3392,14 @@ function rCatAccessPanel(){
         <td style="font-weight:600">${roleLabels[r]||r}</td>
         <td style="text-align:center;vertical-align:middle">
           <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            ${hasAcad?badgeOk:badgeNo}
+            ${safe(hasAcad?badgeOk:badgeNo)}
             <label class="tgl"><input type="checkbox" ${hasAcad?'checked':''}
               onchange="toggleCatAccess('${r}','academique',this.checked)"/><span class="ts"></span></label>
           </div>
         </td>
         <td style="text-align:center;vertical-align:middle">
           <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            ${hasSpir?badgeOk:badgeNo}
+            ${safe(hasSpir?badgeOk:badgeNo)}
             <label class="tgl"><input type="checkbox" ${hasSpir?'checked':''}
               onchange="toggleCatAccess('${r}','spirituel',this.checked)"/><span class="ts"></span></label>
           </div>
@@ -3411,13 +3429,13 @@ function rCatAccessPanel(){
     const slice=filtered.slice((catIndivPage-1)*CAT_INDIV_PER,catIndivPage*CAT_INDIV_PER);
     indEl.innerHTML=slice.length?slice.map(u=>html`<tr>
       <td><div style="display:flex;align-items:center;gap:8px">
-        ${u.photoB64?`<img src="${u.photoB64}" style="width:28px;height:28px;border-radius:50%;object-fit:cover"/>`:`<div style="width:28px;height:28px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--g500)">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>`}
+        ${safe(u.photoB64?`<img src="${esc(u.photoB64)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover"/>`:`<div style="width:28px;height:28px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--g500)">${esc(((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase())}</div>`)}
         <span style="font-weight:500">${u.prenom} ${u.nom}</span>
       </div></td>
       <td>${safe(rBdg(u.role))}</td>
       <td style="text-align:center">
         <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
-          ${u.spiritualAccess?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>':'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>'}
+          ${safe(u.spiritualAccess?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>':'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>')}
           <label class="tgl"><input type="checkbox" ${u.spiritualAccess?'checked':''} onchange="toggleIndivSpiritual(${u.id},this.checked)"/><span class="ts"></span></label>
         </div>
       </td>
@@ -3430,7 +3448,7 @@ function rCatAccessPanel(){
       for(let p=1;p<=pages;p++){
         btns+=`<button onclick="catIndivPage=${p};rCatAccessPanel()" style="padding:4px 10px;border-radius:6px;border:1.5px solid ${p===catIndivPage?'var(--navy)':'var(--g200)'};background:${p===catIndivPage?'var(--navy)':'white'};color:${p===catIndivPage?'white':'var(--g600)'};font-size:12px;cursor:pointer;font-family:inherit">${p}</button>`;
       }
-      pgnEl.innerHTML=html`<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--g400)">${total} membre(s)</span>${btns}</div>`;
+      pgnEl.innerHTML=html`<div style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--g400)">${total} membre(s)</span>${safe(btns)}</div>`;
     }
   }
 }
@@ -3438,7 +3456,7 @@ async function toggleIndivSpiritual(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
   u.spiritualAccess=v;
   rCatAccessPanel();
-  try{await sbUpd('users',id,{spiritualAccess:v});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+  try{await sbUpd('users',id,{spiritualAccess:v});_cachePut({users});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
 }
 async function toggleCatAccess(role,type,v){
   if(!cfg.catAccess)cfg.catAccess={member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
@@ -3793,8 +3811,8 @@ function _renderDiag(anomalies,filter){
       <div style="flex:1;min-width:0">
         <div style="font-size:14px;font-weight:500;color:var(--navy);margin-bottom:3px">${a.title}</div>
         <div style="font-size:12px;color:var(--g500);line-height:1.5">${a.desc}</div>
-        <div style="margin-top:6px">${fixBtn}${detailBtn}</div>
-        ${preview}
+        <div style="margin-top:6px">${safe(fixBtn)}${safe(detailBtn)}</div>
+        ${safe(preview)}
       </div>
       <div style="background:${lc.bg};color:${lc.text};font-size:12px;font-weight:600;
         padding:3px 10px;border-radius:20px;flex-shrink:0;white-space:nowrap">${a.count} élément${a.count>1?'s':''}</div>
@@ -3849,7 +3867,8 @@ function openPubRegister(){
       <div class="fg"><label class="ld">Nom <span style="color:#dc2626">*</span></label><input class="fi" id="reg-nom" autocomplete="family-name"/></div>
       <div class="fg"><label class="ld">Numéro WhatsApp <span style="color:#dc2626">*</span></label>
         <div style="display:flex;align-items:center;gap:6px">
-          ${(_pubMeeting?.countryCode)?`<span style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:10px 10px;font-size:13px;font-weight:600;color:var(--g600);white-space:nowrap">${_pubMeeting.countryCode}</span>`:''}
+          ${safe((_pubMeeting?.countryCode)?`<span style="background:var(--g100);border:1px solid var(--g200);border-radius:8px;padding:10px 10px;font-size:13px;font-weight:600;color:var(--g600);white-space:nowrap">${esc(_pubMeeting.countryCode)}</span>`:'')}
+
           <input class="fi" id="reg-whatsapp" type="tel" placeholder="${(_pubMeeting?.countryCode)?'07 00 00 00 00':'+225 07 00 00 00 00'}" style="flex:1"
             onfocus="if(!this.value&&'${_pubMeeting?.countryCode||''}')this.value='${_pubMeeting?.countryCode||''} '" />
         </div>
@@ -3858,12 +3877,12 @@ function openPubRegister(){
       <div class="fg"><label class="ld">Profession</label><input class="fi" id="reg-profession" placeholder="Ex : Étudiant"/></div>
       <div class="fg"><label class="ld">Email <span style="font-size:11px;color:var(--g400)">(optionnel)</span></label><input class="fi" id="reg-email" type="email"/></div>
       <p id="reg-err" style="color:#dc2626;font-size:13px;margin-top:8px;min-height:16px"></p>
-      ${(_pubMeeting&&(_pubMeeting.place||_pubMeeting.time))?`
+      ${safe((_pubMeeting&&(_pubMeeting.place||_pubMeeting.time))?`
       <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;margin-top:4px">
         <div style="font-size:12px;font-weight:600;color:#92400e;margin-bottom:6px">📌 Pour finaliser votre inscription</div>
-        ${_pubMeeting.place?`<div style="font-size:12px;color:#78350f;margin-bottom:3px">📍 ${_pubMeeting.place}</div>`:''}
-        ${_pubMeeting.time?`<div style="font-size:12px;color:#78350f">🕒 ${_pubMeeting.time}</div>`:''}
-      </div>`:''}
+        ${_pubMeeting.place?`<div style="font-size:12px;color:#78350f;margin-bottom:3px">📍 ${esc(_pubMeeting.place)}</div>`:''}
+        ${_pubMeeting.time?`<div style="font-size:12px;color:#78350f">🕒 ${esc(_pubMeeting.time)}</div>`:''}
+      </div>`:'')}
     </div>
     <div style="padding:0 20px 20px;display:flex;gap:10px">
       <button type="button" onclick="document.getElementById('_pub_reg_modal').remove()" style="flex:1;padding:12px;border:1.5px solid #e2e8f0;background:white;border-radius:10px;font-size:14px;font-family:inherit;cursor:pointer;color:#475569">Annuler</button>
@@ -3907,9 +3926,9 @@ function _showRegSuccess(prenom){
       <div style="font-size:19px;font-weight:700;color:#1e293b;margin-bottom:8px">Demande envoyée, ${prenom} !</div>
       <div style="font-size:14px;color:#475569;line-height:1.6;margin-bottom:20px">Votre demande d'inscription a bien été enregistrée. Pour finaliser votre inscription, présentez-vous auprès de l'administrateur :</div>
       <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;text-align:left;margin-bottom:20px">
-        ${place?`<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-size:18px">📍</span><div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Lieu</div><div style="font-size:14px;color:#1e293b;font-weight:500">${place}</div></div></div>`:''}
-        ${time?`<div style="display:flex;gap:10px"><span style="font-size:18px">🕒</span><div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Disponibilité</div><div style="font-size:14px;color:#1e293b;font-weight:500">${time}</div></div></div>`:''}
-        ${!place&&!time?'<div style="font-size:13px;color:#64748b;text-align:center">Contactez la bibliothèque pour finaliser votre inscription.</div>':''}
+        ${safe(place?`<div style="display:flex;gap:10px;margin-bottom:10px"><span style="font-size:18px">📍</span><div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Lieu</div><div style="font-size:14px;color:#1e293b;font-weight:500">${esc(place)}</div></div></div>`:'')}
+        ${safe(time?`<div style="display:flex;gap:10px"><span style="font-size:18px">🕒</span><div><div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Disponibilité</div><div style="font-size:14px;color:#1e293b;font-weight:500">${esc(time)}</div></div></div>`:'')}
+        ${safe(!place&&!time?'<div style="font-size:13px;color:#64748b;text-align:center">Contactez la bibliothèque pour finaliser votre inscription.</div>':'')}
       </div>
       <button type="button" onclick="document.getElementById('_pub_reg_modal').remove()" style="width:100%;padding:12px;border:none;background:#1c4370;color:white;border-radius:10px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">Compris, merci</button>
     </div>`;
@@ -4086,13 +4105,13 @@ function _renderPubContact(number,name){
   const banner=document.createElement('div');
   banner.id='pub-contact-banner';
   banner.style.cssText='margin:8px 16px 32px;padding:18px;background:linear-gradient(135deg,#eff6ff,#f0f9ff);border:1px solid #bfdbfe;border-radius:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap';
-  banner.innerHTML=html`
+  banner.innerHTML=`
     <div style="width:46px;height:46px;border-radius:12px;background:#0ea5e9;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">💬</div>
     <div style="flex:1;min-width:160px">
       <div style="font-size:15px;font-weight:700;color:#0c4a6e;margin-bottom:2px">Besoin de plus d'informations ?</div>
-      <div style="font-size:13px;color:#0369a1">${name?'<strong>'+name+'</strong> · ':''}Contactez l'administrateur</div>
+      <div style="font-size:13px;color:#0369a1">${name?'<strong>'+esc(name)+'</strong> · ':''}Contactez sur WhatsApp</div>
     </div>
-    <a href="https://wa.me/${clean.replace(/^\+/,'')}" target="_blank" style="background:#22c55e;color:white;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap;flex-shrink:0">📱 ${number}</a>`;
+    <a href="https://wa.me/${esc(clean.replace(/^\+/,''))}" target="_blank" style="background:#22c55e;color:white;text-decoration:none;padding:11px 18px;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap;flex-shrink:0">📱 Contactez sur WhatsApp</a>`;
   /* Insérer APRÈS la pagination (en bas de page) */
   const pgn=document.getElementById('pub-pgn');
   if(pgn&&pgn.parentNode){
@@ -4116,17 +4135,17 @@ function showPubDet(id){
     <div style="background:${cg(b.cat)||'#eff6ff'};padding:28px 20px 22px;text-align:center;position:relative">
       <button onclick="document.getElementById('_pub_modal').remove()" style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,.12);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:15px;color:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>
       <div style="font-size:44px;margin-bottom:10px">${b.emoji||'📖'}</div>
-      <div style="font-size:17px;font-weight:700;color:#1e293b;line-height:1.3;margin-bottom:4px">${b.titre}</div>
-      <div style="font-size:13px;color:#475569">✍️ ${b.auteur||'—'}</div>
+      <div style="font-size:17px;font-weight:700;color:#ffffff;line-height:1.3;margin-bottom:4px;text-shadow:0 1px 3px rgba(0,0,0,.35)">${b.titre}</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.85)">✍️ ${b.auteur||'—'}</div>
     </div>
     <!-- Infos -->
     <div style="padding:18px 20px 22px">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;justify-content:center">
-        ${b.cat?`<span style="background:#f1f5f9;color:#475569;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:500">📂 ${b.cat}</span>`:''}
-        ${b.lang?`<span style="background:#f1f5f9;color:#475569;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:500">🌐 ${b.lang}</span>`:''}
-        ${avail
+        ${safe(b.cat?`<span style="background:#f1f5f9;color:#475569;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:500">📂 ${esc(b.cat)}</span>`:'')}
+        ${safe(b.lang?`<span style="background:#f1f5f9;color:#475569;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:500">🌐 ${esc(b.lang)}</span>`:'')}
+        ${safe(avail
           ?'<span style="background:#dcfce7;color:#16a34a;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:600">✅ Disponible</span>'
-          :'<span style="background:#ede9fe;color:#7c3aed;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:600">📖 Emprunté</span>'}
+          :'<span style="background:#ede9fe;color:#7c3aed;font-size:12px;padding:5px 12px;border-radius:20px;font-weight:600">📖 Emprunté</span>')}
       </div>
       <!-- Message consultation uniquement -->
       <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;text-align:center;font-size:13px;color:#92400e">
@@ -4211,6 +4230,7 @@ async function saveMyProfile(){
   try{
     await sbUpd('users',curUser.id,updates);
     Object.assign(curUser,updates);
+    _cachePut({users});
     /* Mettre à jour l'affichage du nom dans la nav */
     const n0=document.getElementById('n0');if(n0)n0.textContent=curUser.abbrev||'—';
     cM('m-profile');
@@ -4456,27 +4476,28 @@ async function runTestPanel(){
   const sb=failed?'#fee2e2':warned?'#fffbeb':'#dcfce7';
   const si=failed?'❌':warned?'⚠️':'✅';
   const st=failed?`${failed} test(s) échoué(s)`:warned?'Tout fonctionne (avertissements)':'Tout fonctionne parfaitement';
-  let html=`<div style="background:${sb};border:1px solid ${sc}33;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px">
+  let out=`<div style="background:${sb};border:1px solid ${sc}33;border-radius:12px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;gap:14px">
     <div style="font-size:36px">${si}</div>
     <div><div style="font-size:16px;font-weight:700;color:${sc}">${st}</div>
     <div style="font-size:13px;color:var(--g500);margin-top:2px">${passed}/${allResults.length} reussis · ${warned} avertissements · ${elapsed}s</div></div></div>`;
   for(const g of groups){
     const gf=g.results.filter(r=>!r.ok).length;const gw=g.results.filter(r=>r.ok&&r.warn).length;
     const gi=gf?'❌':gw?'⚠️':'✅';
-    html+=`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;margin-bottom:14px;overflow:hidden">
+    const rows=g.results.map(r=>{const ic=r.ok?(r.warn?'⚠️':'✅'):'❌';const bg=r.ok?(r.warn?'#fffbeb':'white'):'#fff5f5';const tc=r.ok?(r.warn?'#92400e':'#1e293b'):'#991b1b';
+      return html`<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);background:${bg};display:flex;align-items:flex-start;gap:10px">
+        <span style="font-size:14px;flex-shrink:0">${ic}</span>
+        <div><div style="font-size:13px;font-weight:500;color:${tc}">${r.label}</div>${safe(r.detail?`<div style="font-size:12px;color:var(--g500);margin-top:2px">${r.detail}</div>`:'')}</div>
+      </div>`;}).join('');
+    out+=`<div style="background:white;border:0.5px solid var(--g200);border-radius:12px;margin-bottom:14px;overflow:hidden">
       <div style="padding:13px 16px;border-bottom:0.5px solid var(--g100);background:var(--g50);display:flex;align-items:center;gap:10px">
         <span style="font-size:18px">${gi}</span>
         <div style="flex:1"><div style="font-size:15px;font-weight:600;color:var(--navy)">${g.title}</div><div style="font-size:12px;color:var(--g400)">${g.sub}</div></div>
         <div style="font-size:12px;color:var(--g400)">${g.results.filter(r=>r.ok).length}/${g.results.length}</div>
       </div>
-      ${g.results.map(r=>{const ic=r.ok?(r.warn?'⚠️':'✅'):'❌';const bg=r.ok?(r.warn?'#fffbeb':'white'):'#fff5f5';const tc=r.ok?(r.warn?'#92400e':'#1e293b'):'#991b1b';
-        return html`<div style="padding:10px 16px;border-bottom:0.5px solid var(--g100);background:${bg};display:flex;align-items:flex-start;gap:10px">
-          <span style="font-size:14px;flex-shrink:0">${ic}</span>
-          <div><div style="font-size:13px;font-weight:500;color:${tc}">${r.label}</div>${safe(r.detail?`<div style="font-size:12px;color:var(--g500);margin-top:2px">${r.detail}</div>`:'')}</div>
-        </div>`;}).join('')}
+      ${rows}
     </div>`;
   }
-  resultsEl.innerHTML=html;
+  resultsEl.innerHTML=out;
   btn.disabled=false;btn.textContent='🔄 Relancer les tests';
 }
 
@@ -4505,7 +4526,9 @@ function swT(t,b){
   if(t==='diag'&&isAdmin)runDiag();
   if(t==='quota'&&isAdmin)rQuotaPanel();
   if(t==='shelves')rAdmShelves();
-  if(t==='reg'&&isAdmin){setRegFilter('pending');}
+  if(t==='reg'&&isAdmin){
+    sbGetAll('registrations').then(data=>{registrations=data;_cachePut({registrations});setRegFilter('pending');}).catch(()=>setRegFilter('pending'));
+  }
   if(t==='testpanel'&&isAdmin){
     /* Afficher le coût estimé avant lancement */
     const w=document.getElementById('tp-quota-warn');
@@ -4829,7 +4852,7 @@ function rAdmShelves(){
       <td style="padding:10px 14px;border-top:0.5px solid var(--g100);white-space:nowrap;font-size:13px;color:var(--g500)">${s.salle}</td>
       <td style="padding:10px 12px;border-top:0.5px solid var(--g100);font-weight:600;font-size:13px">${s.placard} / ${s.etagere}</td>
       <td style="padding:10px 10px;border-top:0.5px solid var(--g100);font-size:12px;color:var(--g400);text-align:center">${booksOnShelf} livre(s)</td>
-      ${cells}
+      ${safe(cells)}
     </tr>`;
   }).join('');
 
@@ -4838,9 +4861,9 @@ function rAdmShelves(){
       <th style="padding:10px 14px;text-align:left;font-weight:500;color:var(--g500);font-size:12px">Salle</th>
       <th style="padding:10px 12px;text-align:left;font-weight:500;color:var(--g500);font-size:12px">Placard / Étagère</th>
       <th style="padding:10px 10px;text-align:center;font-weight:500;color:var(--g500);font-size:12px">Livres</th>
-      ${headerCols}
+      ${safe(headerCols)}
     </tr></thead>
-    <tbody>${rows}</tbody>`;
+    <tbody>${safe(rows)}</tbody>`;
 
   /* ── Section Activité ── */
   _rShelvesActivity();
@@ -4898,7 +4921,7 @@ function _rShelvesActivity(){
                 <span style="font-size:16px">${statusIcon}</span>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:500;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.titre}</div>
-                  <div style="font-size:12px;color:var(--g500)">${b.lastModifiedBy} ${roleBadge}</div>
+                  <div style="font-size:12px;color:var(--g500)">${b.lastModifiedBy} ${safe(roleBadge)}</div>
                   <div style="font-size:11px;color:var(--g400);margin-top:1px">${b.salle} / ${b.placard} / Ét.${b.etagere}</div>
                 </div>
                 <div style="font-size:11px;color:var(--g400);white-space:nowrap">${dt}</div>
@@ -4946,12 +4969,12 @@ function loadShelfCheckboxes(){
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${gk}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${shs.map(s=>{const key=_shelfKey(s);
+        ${safe(shs.map(s=>{const key=_shelfKey(s);
           return html`<label style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;border:1px solid ${assigned.has(key)?'#3b82f6':'var(--g200)'};background:${assigned.has(key)?'#eff6ff':'white'};cursor:pointer;font-size:13px;transition:all .15s">
             <input type="checkbox" data-shelf-key="${key}" ${assigned.has(key)?'checked':''} style="accent-color:#3b82f6" onchange="this.closest('label').style.background=this.checked?'#eff6ff':'white';this.closest('label').style.borderColor=this.checked?'#3b82f6':'var(--g200)'"/>
             Étagère ${s.etagere}
           </label>`;
-        }).join('')}
+        }).join(''))}
       </div>
     </div>`).join('');
 }
@@ -4967,6 +4990,7 @@ async function saveShelfAssign(){
   u.assignedShelves=checked;
   try{
     await sbUpd('users',u.id,{assignedShelves:checked});
+    _cachePut({users});
     cM('m-shelf-assign');
     rAdmShelves();
     _showSyncToast('✅ Étagères sauvegardées');
@@ -5172,6 +5196,7 @@ async function doImport(){
       showLoading(`Import… ${added}/${newBooks.length} livres`);
     }
     books.push(...newBooks);
+    _cachePut({books});
     await sbSaveCounters();
     hideLoading();
     document.getElementById('imp-prv').style.display='none';document.getElementById('imp-res').style.display='block';
@@ -5323,7 +5348,8 @@ async function saLoadSpaces(){
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="space-code">/${s.code}</span>
             <span class="${s.active!==false?'sa-badge-active':'sa-badge-inactive'}">${s.active!==false?'● Actif':'● Inactif'}</span>
-            ${s.tagline?`<span style="font-size:12px;color:rgba(255,255,255,.35)">${s.tagline}</span>`:''}
+            ${safe(s.tagline?`<span style="font-size:12px;color:rgba(255,255,255,.35)">${esc(s.tagline)}</span>`:'')}
+
           </div>
           <div style="margin-top:6px">
             <a href="/${s.code}" target="_blank" style="font-size:12px;color:#a5b4fc;text-decoration:none;font-weight:500">🔗 ${window.location.origin}/${s.code}</a>
@@ -5868,6 +5894,7 @@ async function rejectReturn(loanId){
   try{
     await sbUpd('loans',loanId,{status:'active',returnedAt:null});
     l.status='active';l.returnedAt=null;
+    _cachePut({loans});
     rLoans('active');rAdmLoans();updAdmLoansBadge();
   }catch(e){alert('Erreur : '+e.message);}
 }
