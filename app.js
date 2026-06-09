@@ -5034,7 +5034,7 @@ function _rShelvesActivity(){
           <div style="font-size:14px;font-weight:600;color:var(--navy)">📝 Modifications récentes des livres</div>
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:12px;color:var(--g400)">${recentBooks.length} livre(s)</span>
-            ${safe(recentBooks.length?`<button type="button" class="btn bd btn-xs" onclick="clearRecentModifs()" title="Effacer l'historique des modifications">🗑️ Effacer</button>`:'')}
+            ${recentBooks.length?`<button type="button" class="btn bd btn-xs" onclick="clearRecentModifs()" title="Effacer l'historique des modifications">🗑️ Effacer</button>`:''}
           </div>
         </div>
         <div style="max-height:400px;overflow-y:auto">
