@@ -80,9 +80,16 @@ function _colToTable(col){
 async function sbGetAll(col){
   _initSb();
   const tbl=_colToTable(col);
-  const {data,error}=await sb.from(tbl).select('*').eq('space_code',SPACE_ID);
-  if(error)throw new Error(error.message);
-  return data||[];
+  const PAGE=1000;
+  let all=[],from=0;
+  while(true){
+    const {data,error}=await sb.from(tbl).select('*').eq('space_code',SPACE_ID).range(from,from+PAGE-1);
+    if(error)throw new Error(error.message);
+    all.push(...(data||[]));
+    if(!data||data.length<PAGE)break;
+    from+=PAGE;
+  }
+  return all;
 }
 
 /* ── Lecture d'un document unique ── */
