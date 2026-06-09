@@ -495,3 +495,23 @@ code.pl{background:var(--g100);padding:2px 8px;border-radius:5px;font-size:13px;
   #pub-cgrid{grid-template-columns:1fr 1fr!important;gap:8px!important}
   .at{padding:7px 11px!important;font-size:11px!important}
 }
+
+/* ═══════════════════════════════════════════════════════════
+   NAVIGATION MOBILE — Overlay et auto-fermeture
+═══════════════════════════════════════════════════════════ */
+.mob-nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:198;-webkit-tap-highlight-color:transparent}
+.mob-nav-overlay.visible{display:block}
+body.mob-nav-lock{overflow:hidden}
+
+@media(max-width:768px){
+  /* Hamburger plus grand pour confort tactile (44px = minimum recommandé) */
+  .hmb{width:44px;height:44px;border-radius:10px;font-size:20px}
+  /* Animation d'apparition du menu */
+  .nls.mob-open{animation:mobNavSlide .15s ease-out}
+  /* Retour visuel au tap sur les items */
+  .nls.mob-open .nl:active{background:rgba(255,255,255,.25)!important;transform:scale(.98)}
+}
+@keyframes mobNavSlide{
+  from{opacity:0;transform:translateY(-6px)}
+  to{opacity:1;transform:translateY(0)}
+}

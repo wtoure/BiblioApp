@@ -1143,43 +1143,61 @@ function bNav(cid,av){
   const r=curUser.role;
   const tabs=curUser.tabs||[];
   const hasTab=k=>r==='admin'||tabs.includes(k);
-  /* L'admin voit toujours les deux catalogues */
   if(r==='admin')curUser.spiritualAccess=true;
-  let h=`<button type="button" class="nl${av==='vc'?' active':''}" onclick="showCat()">&#128218; Catalogue</button>`;
+  let h=`<button type="button" class="nl${av==='vc'?' active':''}" onclick="_closeMobNavAll();showCat()">&#128218; Catalogue</button>`;
   if(r==='commission'||r==='admin'||r==='resident')
-    h+=`<button type="button" class="nl${av==='vcom'?' active':''}" onclick="showCom()">${r==='resident'?'&#128065;&#65039; Consultation':'&#128203; Gestion des demandes'}</button>`;
+    h+=`<button type="button" class="nl${av==='vcom'?' active':''}" onclick="_closeMobNavAll();showCom()">${r==='resident'?'&#128065;&#65039; Consultation':'&#128203; Gestion des demandes'}</button>`;
   if(r==='enrol'||r==='admin')
-    h+=`<button type="button" class="nl${av==='vca'?' active':''}" onclick="showCA()">&#128221; Gestion du catalogue</button>`;
+    h+=`<button type="button" class="nl${av==='vca'?' active':''}" onclick="_closeMobNavAll();showCA()">&#128221; Gestion du catalogue</button>`;
   if(r==='commission'||r==='admin'||hasTab('stats'))
-    h+=`<button type="button" class="nl${av==='vstat'?' active':''}" onclick="showStat()">&#128202; Statistiques</button>`;
+    h+=`<button type="button" class="nl${av==='vstat'?' active':''}" onclick="_closeMobNavAll();showStat()">&#128202; Statistiques</button>`;
   if(r==='admin'&&av!=='vadm')
-    h+=`<button type="button" class="nl" onclick="showAdm()">&#128737;&#65039; Administration</button>`;
+    h+=`<button type="button" class="nl" onclick="_closeMobNavAll();showAdm()">&#128737;&#65039; Administration</button>`;
   if(r==='admin'||r==='validator'||hasTab('loans_validator')){
     const pendingLoans=loans.filter(l=>l.status==='pending'||l.status==='pending_return').length;
     const badge=pendingLoans>0?` <span style="background:#dc2626;color:white;border-radius:20px;padding:0 6px;font-size:11px;margin-left:2px">${pendingLoans}</span>`:'';
-    h+=`<button type="button" class="nl${av==='vloans'?' active':''}" onclick="showLoans()">&#128214; Emprunts${badge}</button>`;
+    h+=`<button type="button" class="nl${av==='vloans'?' active':''}" onclick="_closeMobNavAll();showLoans()">&#128214; Emprunts${badge}</button>`;
   }
-  /* Onglet admin restreint uniquement si l'utilisateur a des droits sur les onglets membres/stats */
   if(r!=='admin'&&(hasTab('members')||hasTab('stats')))
-    h+=`<button type="button" class="nl${av==='vadm'?' active':''}" onclick="showAdm()">&#9881;&#65039; Validations</button>`;
-  /* Guide — disponible pour tous les utilisateurs connectés */
-  h+=`<button type="button" class="nl" onclick="openGuide()">&#10067; Guide</button>`;
+    h+=`<button type="button" class="nl${av==='vadm'?' active':''}" onclick="_closeMobNavAll();showAdm()">&#9881;&#65039; Validations</button>`;
+  h+=`<button type="button" class="nl" onclick="_closeMobNavAll();openGuide()">&#10067; Guide</button>`;
   c.innerHTML=h;
 }
+function _closeMobNavAll(){
+  document.querySelectorAll('.nls.mob-open').forEach(el=>el.classList.remove('mob-open'));
+  const ov=document.getElementById('mob-nav-ov');
+  if(ov)ov.classList.remove('visible');
+  document.body.classList.remove('mob-nav-lock');
+}
 function togMobNav(id){
-  const el=document.getElementById(id);
-  if(!el)return;
+  const el=document.getElementById(id);if(!el)return;
   const isOpening=!el.classList.contains('mob-open');
-  el.classList.toggle('mob-open');
-  /* Injecter un bouton Déconnexion à la fin du menu mobile si absent */
-  if(isOpening&&!el.querySelector('.mob-logout')){
-    const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='nl mob-logout';
-    btn.style.cssText='background:rgba(239,68,68,.15);color:#fca5a5;border:none;width:100%;border-radius:8px;padding:10px 14px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left;margin-top:6px';
-    btn.innerHTML='🚪 Déconnexion';
-    btn.onclick=()=>{el.classList.remove('mob-open');doLogout();};
-    el.appendChild(btn);
+  if(isOpening){
+    document.querySelectorAll('.nls.mob-open').forEach(x=>{if(x!==el)x.classList.remove('mob-open');});
+    el.classList.add('mob-open');
+    let ov=document.getElementById('mob-nav-ov');
+    if(!ov){
+      ov=document.createElement('div');
+      ov.id='mob-nav-ov';
+      ov.className='mob-nav-overlay';
+      ov.onclick=_closeMobNavAll;
+      document.body.appendChild(ov);
+    }
+    ov.classList.add('visible');
+    document.body.classList.add('mob-nav-lock');
+    const onKey=e=>{if(e.key==='Escape'){_closeMobNavAll();document.removeEventListener('keydown',onKey);}};
+    document.addEventListener('keydown',onKey);
+    if(!el.querySelector('.mob-logout')){
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='nl mob-logout';
+      btn.style.cssText='background:rgba(239,68,68,.15);color:#fca5a5;border:none;width:100%;border-radius:8px;padding:10px 14px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left;margin-top:6px';
+      btn.innerHTML='🚪 Déconnexion';
+      btn.onclick=()=>{_closeMobNavAll();doLogout();};
+      el.appendChild(btn);
+    }
+  } else {
+    _closeMobNavAll();
   }
 }
 function sChip(ai,ni){
