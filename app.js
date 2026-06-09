@@ -712,6 +712,12 @@ function _cacheApply(c){
     if(cfg.logoB64)applyLogo(cfg.logoB64);
   }
   if(c.counters&&typeof c.counters==='object'){const d=c.counters;nxB=d.nxB||nxB;nxU=d.nxU||nxU;nxR=d.nxR||nxR;nxS=d.nxS||nxS;nxL=d.nxL||nxL;nxSC=d.nxSC||nxSC;nxReg=d.nxReg||nxReg;}
+  /* Auto-repair des compteurs depuis le cache des livres/users (évite les ID dupliqués au rechargement) */
+  const _cmax=(arr)=>arr.reduce((m,x)=>{const n=parseInt(x.id);return(!isNaN(n)&&n>m)?n:m;},0);
+  if(books.length){const m=_cmax(books)+1;if(nxB<m)nxB=m;}
+  if(users.length){const m=_cmax(users)+1;if(nxU<m)nxU=m;}
+  if(requests.length){const m=_cmax(requests)+1;if(nxR<m)nxR=m;}
+  if(sessions.length){const m=_cmax(sessions)+1;if(nxS<m)nxS=m;}
   /* Retourner les collections manquantes/vides → seront re-fetché depuis Supabase */
   const missing=[];
   if(!books.length)missing.push('books');
