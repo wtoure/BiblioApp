@@ -3429,6 +3429,16 @@ function rCatAccessPanel(){
       <div class="stc stT" style="min-width:160px"><div class="sv" style="color:var(--navy)">${acad}</div><div class="sl">📚 Livres académiques</div></div>
       <div class="stc" style="border-color:#9333ea;min-width:160px"><div class="sv" style="color:#9333ea">${spir}</div><div class="sl">🕊️ Livres spirituels</div></div>`;
   }
+  /* Boutons bulk */
+  const bulkEl=document.getElementById('cat-indiv-bulk');
+  if(bulkEl){
+    const eligible=users.filter(u=>(access[u.role]||[]).includes('spirituel'));
+    const countOn=eligible.filter(u=>u.spiritualAccess).length;
+    const countOff=eligible.filter(u=>!u.spiritualAccess).length;
+    bulkEl.innerHTML=`
+      <button type="button" class="btn bg btn-sm" onclick="bulkIndivSpiritual(true)" ${!countOff?'disabled':''}>✅ Tout activer (${countOff} restant${countOff>1?'s':''})</button>
+      <button type="button" class="btn bwarn btn-sm" onclick="bulkIndivSpiritual(false)" ${!countOn?'disabled':''}>⛔ Tout désactiver (${countOn} actif${countOn>1?'s':''})</button>`;
+  }
   /* Accès individuel spirituel — liste paginée 5 par page */
   const indEl=document.getElementById('cat-indiv-spiritual');
   if(indEl){
@@ -3440,7 +3450,15 @@ function rCatAccessPanel(){
     const pages=Math.ceil(total/CAT_INDIV_PER)||1;
     if(catIndivPage>pages)catIndivPage=1;
     const slice=filtered.slice((catIndivPage-1)*CAT_INDIV_PER,catIndivPage*CAT_INDIV_PER);
-    indEl.innerHTML=slice.length?slice.map(u=>html`<tr>
+    indEl.innerHTML=slice.length?slice.map(u=>{
+      const roleOk=(access[u.role]||[]).includes('spirituel');
+      const disabledAttr=roleOk?'':'disabled title="Le rôle de cet utilisateur n\'a pas accès au catalogue spirituel"';
+      const badge=u.spiritualAccess&&roleOk
+        ?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>'
+        :roleOk
+          ?'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>'
+          :'<span style="background:#fef9c3;color:#92400e;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">🚫 Rôle</span>';
+      return html`<tr style="${roleOk?'':'opacity:.5'}">
       <td><div style="display:flex;align-items:center;gap:8px">
         ${safe(u.photoB64?`<img src="${esc(u.photoB64)}" style="width:28px;height:28px;border-radius:50%;object-fit:cover"/>`:`<div style="width:28px;height:28px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--g500)">${esc(((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase())}</div>`)}
         <span style="font-weight:500">${u.prenom} ${u.nom}</span>
@@ -3448,11 +3466,11 @@ function rCatAccessPanel(){
       <td>${safe(rBdg(u.role))}</td>
       <td style="text-align:center">
         <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
-          ${safe(u.spiritualAccess?'<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">✅ Accès</span>':'<span style="background:#f1f5f9;color:#94a3b8;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">⛔ Non</span>')}
-          <label class="tgl"><input type="checkbox" ${u.spiritualAccess?'checked':''} onchange="toggleIndivSpiritual(${u.id},this.checked)"/><span class="ts"></span></label>
+          ${safe(badge)}
+          <label class="tgl"><input type="checkbox" ${u.spiritualAccess&&roleOk?'checked':''} ${disabledAttr} onchange="toggleIndivSpiritual(${u.id},this.checked)"/><span class="ts"></span></label>
         </div>
       </td>
-    </tr>`).join(''):`<tr><td colspan="3" style="text-align:center;padding:24px;color:var(--g400)">Aucun membre trouvé</td></tr>`;
+    </tr>`;}).join(''):`<tr><td colspan="3" style="text-align:center;padding:24px;color:var(--g400)">Aucun membre trouvé</td></tr>`;
     /* Pagination */
     const pgnEl=document.getElementById('cat-indiv-pgn');
     if(pgnEl){
@@ -3467,9 +3485,26 @@ function rCatAccessPanel(){
 }
 async function toggleIndivSpiritual(id,v){
   const u=users.find(x=>x.id==id);if(!u)return;
+  const access=cfg.catAccess||{};
+  if(!( access[u.role]||[]).includes('spirituel')){_showSyncToast('⚠️ Le rôle de cet utilisateur n\'a pas accès au catalogue spirituel');rCatAccessPanel();return;}
   u.spiritualAccess=v;
   rCatAccessPanel();
   try{await sbUpd('users',id,{spiritualAccess:v});_cachePut({users});}catch(e){console.error(e.message);_showSyncToast('⚠️ Modification non sauvegardée');}
+}
+async function bulkIndivSpiritual(v){
+  const access=cfg.catAccess||{};
+  const eligible=users.filter(u=>(access[u.role]||[]).includes('spirituel'));
+  const targets=eligible.filter(u=>!!u.spiritualAccess!==v);
+  if(!targets.length)return;
+  const label=v?'activer':'désactiver';
+  if(!confirm(`${v?'Activer':'Désactiver'} l'accès spirituel pour ${targets.length} membre(s) dont le rôle est autorisé ?`))return;
+  targets.forEach(u=>u.spiritualAccess=v);
+  rCatAccessPanel();
+  try{
+    await Promise.all(targets.map(u=>sbUpd('users',u.id,{spiritualAccess:v})));
+    _cachePut({users});
+    _showSyncToast(`✅ ${targets.length} membre(s) mis à jour`);
+  }catch(e){console.error(e.message);_showSyncToast('⚠️ Modification partiellement sauvegardée');}
 }
 async function toggleCatAccess(role,type,v){
   if(!cfg.catAccess)cfg.catAccess={member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
