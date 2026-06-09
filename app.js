@@ -5026,7 +5026,10 @@ function _rShelvesActivity(){
       <div style="background:white;border:0.5px solid var(--g200);border-radius:12px;overflow:hidden">
         <div style="padding:12px 16px;border-bottom:0.5px solid var(--g100);display:flex;align-items:center;justify-content:space-between">
           <div style="font-size:14px;font-weight:600;color:var(--navy)">📝 Modifications récentes des livres</div>
-          <div style="font-size:12px;color:var(--g400)">${recentBooks.length} livre(s)</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:12px;color:var(--g400)">${recentBooks.length} livre(s)</span>
+            ${safe(recentBooks.length?`<button type="button" class="btn bd btn-xs" onclick="clearRecentModifs()" title="Effacer l'historique des modifications">🗑️ Effacer</button>`:'')}
+          </div>
         </div>
         <div style="max-height:400px;overflow-y:auto">
           ${!recentBooks.length
@@ -5050,6 +5053,20 @@ function _rShelvesActivity(){
     </div>`;
 }
 
+async function clearRecentModifs(){
+  const count=books.filter(b=>b.lastModifiedAt).length;
+  if(!count)return;
+  if(!confirm(`Effacer l'historique des modifications pour ${count} livre(s) ?\n\nCette action est irréversible.`))return;
+  books.forEach(b=>{if(b.lastModifiedAt){b.lastModifiedAt=null;b.lastModifiedBy=null;b.lastModifiedRole=null;}});
+  rAdmShelves();
+  try{
+    _initSb();
+    await sb.from('books').update({lastModifiedAt:null,lastModifiedBy:null,lastModifiedRole:null})
+      .eq('space_code',SPACE_ID).not('lastModifiedAt','is',null);
+    _cachePut({books});
+    _showSyncToast('✅ Historique effacé');
+  }catch(e){console.error(e.message);_showSyncToast('⚠️ Erreur lors de l\'effacement');}
+}
 /* Ouvrir le modal d'affectation */
 function openShelfAssign(userId){
   const managers=_shelfManagers();
