@@ -656,11 +656,12 @@ async function _bumpSyncBatch(){}
    Clé : cb_data_{SPACE_ID}  /  TTL : 24h
 ═══════════════════════════════════════════════════════════════ */
 const _CACHE_TTL=24*60*60*1000;
+const _CACHE_VER='v3'; /* incrémenter pour invalider tous les caches clients */
 let _cacheKey; /* initialisé après SPACE_ID connu */
 
 function _cacheGet(){
   try{
-    if(!_cacheKey)_cacheKey='cb_data_'+SPACE_ID;
+    if(!_cacheKey)_cacheKey='cb_data_'+_CACHE_VER+'_'+SPACE_ID;
     const raw=localStorage.getItem(_cacheKey);
     if(!raw)return null;
     const c=JSON.parse(raw);
@@ -670,7 +671,7 @@ function _cacheGet(){
 }
 function _cachePut(updates){
   try{
-    if(!_cacheKey)_cacheKey='cb_data_'+SPACE_ID;
+    if(!_cacheKey)_cacheKey='cb_data_'+_CACHE_VER+'_'+SPACE_ID;
     const existing=_cacheGet()||{ts:Date.now(),sv:{},books:[],loans:[],users:[],requests:[],sessions:[],config:null,counters:null};
     const merged={...existing,...updates,ts:Date.now()};
     localStorage.setItem(_cacheKey,JSON.stringify(merged));
@@ -926,6 +927,8 @@ async function startRealtimeSync(){
     if(missing.length===0){
       dataReady=true;hideLoading();_setRtStatus(true);
       console.log('[RT] Cache complet — books:',books.length,'users:',users.length);
+      /* Refresh silencieux des livres en arrière-plan pour détecter les livres manquants */
+      _fetchAndCache('books',null).then(()=>_refreshView(['books'])).catch(()=>{});
     }else{
       try{if(_cacheKey)localStorage.removeItem(_cacheKey);}catch(e){}
       console.warn('[RT] Cache incomplet, invalidé. Manquants:',missing);
