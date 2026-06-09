@@ -1,9 +1,9 @@
 :root{--navy:#1C4370;--nd:#142f4f;--nl:#2a5a8f;--green:#22806B;--gd:#1a6355;--gl:#2da88e;--light:#EAF4F1;--l2:#c8e6de;--g50:#f8fafb;--g100:#f0f4f7;--g200:#e1e8f0;--g300:#c5d4e0;--g400:#94a3b8;--g500:#64748b;--g600:#475569;--g700:#334155;--text:#1a2a3a;--danger:#c0392b;--dbg:#fef2f2;--warn:#b45309;--wbg:#fffbeb;--enrol:#7c3aed;--ebg:#ede9fe;--res:#0891b2;--rbg:#e0f9ff;--sm:0 1px 4px rgba(28,67,112,.08);--sh:0 4px 18px rgba(28,67,112,.10);--lg:0 14px 44px rgba(28,67,112,.14);--r:12px;--rs:8px;--rl:20px}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{font-family:'DM Sans',sans-serif;background:var(--light);color:var(--text);min-height:100vh;font-size:15px;line-height:1.65}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{font-family:'DM Sans',sans-serif;background:var(--light);color:var(--text);min-height:100vh;font-size:15px;line-height:1.65;overflow-x:hidden;max-width:100%}
 h1,h2,h3,h4{font-family:'Cormorant Garamond',serif;font-weight:600;line-height:1.2}
-.view{display:none;min-height:100vh}
+.view{display:none;min-height:100vh;max-width:100%}
 #vl.active{display:flex;align-items:center;justify-content:center}
 #vc.active,#vca.active,#vcom.active,#vadm.active,#vstat.active,#vloans.active{display:block}
 /* LOGIN */
@@ -514,4 +514,23 @@ body.mob-nav-lock{overflow:hidden}
 @keyframes mobNavSlide{
   from{opacity:0;transform:translateY(-6px)}
   to{opacity:1;transform:translateY(0)}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANTI-OVERFLOW MOBILE — Empêcher les éléments de déborder
+═══════════════════════════════════════════════════════════ */
+@media(max-width:768px){
+  /* Tous les éléments de formulaire restent dans leurs conteneurs */
+  select.fi,input.fi{max-width:100%;box-sizing:border-box}
+  /* Tables : wrapper scrollable sans déborder */
+  .tov{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Barres de filtres admin : 2 sélects par ligne max */
+  [id^="adm-f-"],[id^="ca-f-"]{max-width:calc(50% - 4px);box-sizing:border-box}
+  /* Session cards : une par ligne */
+  .sess-grid{grid-template-columns:1fr}
+}
+
+@media(max-width:480px){
+  /* Selects filtres : pleine largeur sur très petit écran */
+  [id^="adm-f-"],[id^="ca-f-"]{max-width:100%;width:100%}
 }
