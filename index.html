@@ -685,7 +685,9 @@
     <!-- CATALOGUES -->
     <div id="ap-cat2" class="ap">
       <h3 style="font-size:20px;color:var(--navy);margin-bottom:18px">🗂️ Gestion des catalogues</h3>
-      <div class="al ai" style="margin-bottom:20px">📖 Définissez quels rôles peuvent accéder au catalogue <strong>Académique</strong> et/ou <strong>Spirituel</strong>.</div>
+      <!-- Gestionnaire de types de catalogues -->
+      <div id="cat-types-manager" style="margin-bottom:24px"></div>
+      <div class="al ai" style="margin-bottom:20px">📖 Définissez quels rôles peuvent accéder à chaque catalogue.</div>
       <div id="cat-access-panel"></div>
       <div style="margin-top:24px">
         <h3 style="font-size:18px;color:var(--navy);margin-bottom:12px">Répartition actuelle des livres</h3>
@@ -995,10 +997,7 @@
         <datalist id="dl-bfca"></datalist>
       </div>
       <div class="fg"><label class="ld">Type de catalogue <span style="color:var(--danger)">*</span></label>
-        <select class="fi fi-l" id="bfct">
-          <option value="academique">📚 Académique</option>
-          <option value="spirituel">🕊️ Spirituel</option>
-        </select>
+        <select class="fi fi-l" id="bfct"></select>
       </div>
       <div class="fg"><label class="ld">Langue</label>
         <select class="fi fi-l" id="bflg" onchange="togLangCustom(this.value)">

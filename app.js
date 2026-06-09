@@ -251,9 +251,25 @@ async function saveContact(){
    IN-MEMORY DATA (chargé depuis Supabase au démarrage)
 ═══════════════════════════════════════════════════════════════ */
 let books=[], users=[], requests=[], sessions=[], loginLog=[],deletedUsers=[],loans=[],shelfChecks=[],registrations=[];
-let cfg={openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}};
+let cfg={openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']},catTypes:[]};
 let curUser=null, bfSrc='adm', bfEid=null, ufEid=null;
 let nxB=13, nxU=7, nxR=3, nxS=2, nxL=1, nxSC=1, nxReg=1;
+
+/* ── Catalogues disponibles : builtins + catalogues custom créés par l'admin ── */
+const _CAT_BUILTINS=[
+  {id:'academique',label:'Académique',emoji:'📚',builtin:true},
+  {id:'spirituel', label:'Spirituel', emoji:'🕊️',builtin:true,requiresIndivAccess:true}
+];
+function _getCatTypes(){
+  const custom=(cfg.catTypes||[]).filter(t=>t&&t.id&&!['academique','spirituel'].includes(t.id));
+  return [..._CAT_BUILTINS,...custom];
+}
+function _populateCatTypeSelect(){
+  const el=document.getElementById('bfct');if(!el)return;
+  const cur=el.value;
+  el.innerHTML=_getCatTypes().map(t=>`<option value="${t.id}">${t.emoji} ${t.label}</option>`).join('');
+  if(cur&&[...el.options].some(o=>o.value===cur))el.value=cur;
+}
 let impRaw=[], impHdr=[], impMap=[], impParsed=[];
 
 /* Données par défaut (premier lancement) */
@@ -690,8 +706,9 @@ function _cacheApply(c){
   if(Array.isArray(c.shelfChecks))shelfChecks=c.shelfChecks;
   if(Array.isArray(c.registrations))registrations=c.registrations;
   if(c.config&&typeof c.config==='object'){
-    cfg=Object.assign({openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:CA_DEFAULT},c.config);
+    cfg=Object.assign({openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:CA_DEFAULT,catTypes:[]},c.config);
     if(!cfg.catAccess)cfg.catAccess=CA_DEFAULT;
+    if(!Array.isArray(cfg.catTypes))cfg.catTypes=[];
     if(cfg.logoB64)applyLogo(cfg.logoB64);
   }
   if(c.counters&&typeof c.counters==='object'){const d=c.counters;nxB=d.nxB||nxB;nxU=d.nxU||nxU;nxR=d.nxR||nxR;nxS=d.nxS||nxS;nxL=d.nxL||nxL;nxSC=d.nxSC||nxSC;nxReg=d.nxReg||nxReg;}
@@ -785,8 +802,8 @@ async function _fetchAndCache(col, sv){
   /* ── Config et Counters : toujours un seul document ── */
   if(col==='config'){
     const d=await sbGetDoc('config',SPACE_ID);
-    if(d){cfg=Object.assign({openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:CA_DEFAULT},d);
-      if(!cfg.catAccess)cfg.catAccess=CA_DEFAULT;if(cfg.logoB64)applyLogo(cfg.logoB64);}
+    if(d){cfg=Object.assign({openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,pdfFields:['num','titre','auteur','desc','demandeur'],catAccess:CA_DEFAULT,catTypes:[]},d);
+      if(!cfg.catAccess)cfg.catAccess=CA_DEFAULT;if(!Array.isArray(cfg.catTypes))cfg.catTypes=[];if(cfg.logoB64)applyLogo(cfg.logoB64);}
     _cachePut({config:cfg});return;
   }
   if(col==='counters'){
@@ -1371,12 +1388,15 @@ function rCatTypeTabs(){
   const _ca2=cfg.catAccess||{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
   /* Admin voit toujours les deux catalogues.
      Pour les autres rôles : le rôle doit autoriser spirituel ET l'utilisateur doit avoir spiritualAccess=true */
-  const _roleAllowed=curUser&&curUser.role==='admin'?['academique','spirituel']:(curUser?(_ca2[curUser.role]||['academique']):['academique']);
+  const catDefs=_getCatTypes();
+  const _roleAllowed=curUser&&curUser.role==='admin'
+    ?catDefs.map(t=>t.id)
+    :(curUser?(_ca2[curUser.role]||['academique']):['academique']);
   const allowed=curUser&&curUser.role!=='admin'
-    ?_roleAllowed.filter(t=>t!=='spirituel'||!!curUser.spiritualAccess)
+    ?_roleAllowed.filter(t=>{const def=catDefs.find(c=>c.id===t);return !def?.requiresIndivAccess||!!curUser.spiritualAccess;})
     :_roleAllowed;
   if(allowed.length<=1){el.innerHTML='';catTypeFilter='all';return;}
-  const tabs=[{k:'all',l:'Tous les livres',ico:'📚'},{k:'academique',l:'Académique',ico:'📚'},{k:'spirituel',l:'Spirituel',ico:'🕊️'}];
+  const tabs=[{k:'all',l:'Tous les livres',ico:'📚'},...catDefs.map(t=>({k:t.id,l:t.label,ico:t.emoji}))];
   el.innerHTML=tabs.filter(t=>t.k==='all'||allowed.includes(t.k)).map(t=>html`
     <button onclick="catTypeFilter='${t.k}';catPage=1;rCatTypeTabs();rCat();"
       style="padding:7px 16px;border-radius:20px;border:1.5px solid ${catTypeFilter===t.k?'var(--navy)':'var(--g200)'};
@@ -1388,15 +1408,18 @@ function qSearch(v){const q=v.toLowerCase();sf={t:q,a:q,c:q,l:q};catPage=1;rCat(
 let catNewOnly=false,catFeatOnly=false;
 function gFilt(){
   const _ca=cfg.catAccess||{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
-  /* L'admin voit toujours les deux catalogues, quoi que dise la config */
+  const _catDefs=_getCatTypes();
+  /* L'admin voit tous les catalogues */
   const isAdmin=curUser&&curUser.role==='admin';
-  const allowedCats=isAdmin?['academique','spirituel']:(curUser?(_ca[curUser.role]||['academique']):['academique']);
+  const allowedCats=isAdmin?_catDefs.map(t=>t.id):(curUser?(_ca[curUser.role]||['academique']):['academique']);
   const avail=books.filter(b=>{
     if(b.status==='retired')return false;
     const bType=b.catType||'academique';
-    /* Accès spirituel : le rôle doit autoriser ET l'utilisateur doit avoir spiritualAccess=true */
-    if(bType==='spirituel'&&!isAdmin&&!(allowedCats.includes('spirituel')&&curUser?.spiritualAccess))return false;
-    else if(bType!=='spirituel'&&!allowedCats.includes(bType))return false;
+    const catDef=_catDefs.find(t=>t.id===bType);
+    /* Catalogues à accès individuel requis (ex : spirituel) */
+    if(catDef?.requiresIndivAccess&&!isAdmin){
+      if(!(allowedCats.includes(bType)&&curUser?.spiritualAccess))return false;
+    } else if(!isAdmin&&!allowedCats.includes(bType))return false;
     if(catTypeFilter&&catTypeFilter!=='all'&&bType!==catTypeFilter)return false;
     return true;
   });
@@ -1446,7 +1469,7 @@ function rCat(page=catPage){
     <div class="bcv" style="background:${cg(b.cat)}">${b.emoji||ci(b.cat)}</div>
     <div class="bbd">
       <span class="ctg" style="background:${cb(b.cat)};color:${cf(b.cat)}">${b.cat}</span>
-      ${safe((b.catType||'academique')==='spirituel'?'<span class="ctg" style="background:#f3e8ff;color:#6b21a8;font-size:10px">🕊️ Spirituel</span>':'')}
+      ${safe((()=>{const ct=b.catType||'academique';if(ct==='academique')return'';const def=_getCatTypes().find(t=>t.id===ct);return def?`<span class="ctg" style="background:#f3e8ff;color:#6b21a8;font-size:10px">${def.emoji} ${def.label}</span>`:`<span class="ctg" style="background:#f1f5f9;color:#64748b;font-size:10px">${ct}</span>`;})())}
       <div class="btt">${b.titre}</div>
       <div class="bat">✍️ ${b.auteur||'—'}</div>
       ${safe(b.salle?`<div class="blo">📍 ${esc(b.salle)}${b.placard?` · ${esc(b.placard)}`:''}${b.etagere?`-${esc(b.etagere)}`:''}</div>`:'')}
@@ -2361,7 +2384,7 @@ function bkRows(src,list=null){
     return html`<tr>
     <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.titre}${safe(modBadge)}${safe(newBadge)}${safe(featBadge)}</td>
     <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.auteur||'—'}</td>
-    <td><span class="badge" style="background:${cb(b.cat)};color:${cf(b.cat)}">${b.cat}</span><br><span style="font-size:10px;color:var(--g400)">${(b.catType||'academique')==='spirituel'?'🕊️':'📚'}</span></td>
+    <td>${safe((()=>{const ct=b.catType||'academique';const def=_getCatTypes().find(t=>t.id===ct);return`<span class="badge" style="background:${cb(b.cat)};color:${cf(b.cat)}">${esc(b.cat)}</span><br><span style="font-size:10px;color:var(--g400)">${def?def.emoji:'📚'} ${def&&ct!=='academique'?esc(def.label):''}</span>`;})())}</td>
     <td style="white-space:nowrap;color:var(--g600);font-size:12px">${[b.salle,b.placard,b.etagere].filter(Boolean).join(' · ')||'—'}</td>
     <td>${b.lang||'—'}</td><td>${b.annee||'—'}</td>
     ${safe(copiesBadge)}
@@ -2542,6 +2565,7 @@ function openBkM(src,id=null){
   _fillDL('dl-bfsa', books.map(b=>b.salle));
   _fillDL('dl-bfpl', books.map(b=>b.placard));
   _fillDL('dl-bfet', books.map(b=>b.etagere));
+  _populateCatTypeSelect();
 
   const KNOWN_LANGS=['Français','Anglais','Espagnol','Portugais','Mandarin (Chinois)'];
   const fmap={bftt:'titre',bfau:'auteur',bfca:'cat',bfsa:'salle',bfpl:'placard',bfet:'etagere',bfyr:'annee',bfex:'expl',bfan:'ancienNouv',bfet2:'etat',bfed:'editeur',bfrs:'resume'};
@@ -3394,40 +3418,36 @@ function rCatAccessPanel(){
   const roles=['member','commission','resident','enrol','admin'];
   const roleLabels={'member':'👤 Membre','commission':'🎓 Commission','resident':'🏠 Résident','enrol':'📝 Enrôlement','admin':'🛡️ Admin'};
   const access=cfg.catAccess||{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
+  const catDefs=_getCatTypes();
   const badgeOk='<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">✅ Actif</span>';
   const badgeNo='<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;color:#94a3b8;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">⛔ Inactif</span>';
+  const headers=catDefs.map(t=>`<th style="text-align:center">${t.emoji} ${t.label}</th>`).join('');
   el.innerHTML=`<div class="tw"><div class="tov"><table>
-    <thead><tr><th>Rôle</th><th style="text-align:center">📚 Académique</th><th style="text-align:center">🕊️ Spirituel</th></tr></thead>
+    <thead><tr><th>Rôle</th>${headers}</tr></thead>
     <tbody>${roles.map(r=>{
-      const hasAcad=(access[r]||[]).includes('academique');
-      const hasSpir=(access[r]||[]).includes('spirituel');
-      return html`<tr>
-        <td style="font-weight:600">${roleLabels[r]||r}</td>
-        <td style="text-align:center;vertical-align:middle">
+      const cols=catDefs.map(t=>{
+        const has=(access[r]||[]).includes(t.id);
+        return html`<td style="text-align:center;vertical-align:middle">
           <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            ${safe(hasAcad?badgeOk:badgeNo)}
-            <label class="tgl"><input type="checkbox" ${hasAcad?'checked':''}
-              onchange="toggleCatAccess('${r}','academique',this.checked)"/><span class="ts"></span></label>
+            ${safe(has?badgeOk:badgeNo)}
+            <label class="tgl"><input type="checkbox" ${has?'checked':''}
+              onchange="toggleCatAccess('${r}','${t.id}',this.checked)"/><span class="ts"></span></label>
           </div>
-        </td>
-        <td style="text-align:center;vertical-align:middle">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            ${safe(hasSpir?badgeOk:badgeNo)}
-            <label class="tgl"><input type="checkbox" ${hasSpir?'checked':''}
-              onchange="toggleCatAccess('${r}','spirituel',this.checked)"/><span class="ts"></span></label>
-          </div>
-        </td>
-      </tr>`;
+        </td>`;
+      }).join('');
+      return html`<tr><td style="font-weight:600">${roleLabels[r]||r}</td>${safe(cols)}</tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
+  /* Gestionnaire de types de catalogues */
+  const mgrEl=document.getElementById('cat-types-manager');
+  if(mgrEl)rCatManager(mgrEl,catDefs);
   /* Stats */
   const statsEl=document.getElementById('cat-type-stats');
   if(statsEl){
-    const acad=books.filter(b=>(b.catType||'academique')==='academique').length;
-    const spir=books.filter(b=>b.catType==='spirituel').length;
-    statsEl.innerHTML=html`
-      <div class="stc stT" style="min-width:160px"><div class="sv" style="color:var(--navy)">${acad}</div><div class="sl">📚 Livres académiques</div></div>
-      <div class="stc" style="border-color:#9333ea;min-width:160px"><div class="sv" style="color:#9333ea">${spir}</div><div class="sl">🕊️ Livres spirituels</div></div>`;
+    statsEl.innerHTML=catDefs.map(t=>{
+      const cnt=books.filter(b=>(b.catType||'academique')===t.id).length;
+      return `<div class="stc" style="min-width:140px"><div class="sv">${cnt}</div><div class="sl">${t.emoji} ${t.label}</div></div>`;
+    }).join('');
   }
   /* Boutons bulk */
   const bulkEl=document.getElementById('cat-indiv-bulk');
@@ -3515,6 +3535,56 @@ async function toggleCatAccess(role,type,v){
   rCatAccessPanel();
   try{await sbSaveCfg();_cachePut({config:cfg});}
   catch(e){cfg.catAccess[role]=oldAccess;rCatAccessPanel();console.warn('[toggleCatAccess]',e);_showSyncToast('⚠️ Modification non sauvegardée');}
+}
+
+/* ── Rendu du gestionnaire de types de catalogues ── */
+function rCatManager(el,catDefs){
+  const custom=catDefs.filter(t=>!t.builtin);
+  el.innerHTML=`
+  <div style="background:#f8fafc;border:1px solid var(--g200);border-radius:12px;padding:16px 20px">
+    <h4 style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:12px">📂 Types de catalogues</h4>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      ${catDefs.map(t=>`<span style="display:inline-flex;align-items:center;gap:6px;background:${t.builtin?'var(--g100)':'#eff6ff'};border:1px solid ${t.builtin?'var(--g200)':'#bfdbfe'};border-radius:20px;padding:5px 12px;font-size:13px;font-weight:600">
+        ${t.emoji} ${t.label}
+        ${t.builtin?'<span style="font-size:10px;color:var(--g400)">intégré</span>':`<button type="button" onclick="delCatType('${t.id}')" title="Supprimer" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:13px;padding:0 0 0 4px;line-height:1">✕</button>`}
+      </span>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="new-cat-emoji" maxlength="4" placeholder="📂" style="width:56px;padding:7px 10px;border:1.5px solid var(--g300);border-radius:8px;font-size:18px;text-align:center;font-family:inherit"/>
+      <input id="new-cat-label" placeholder="Nom du catalogue" style="flex:1;min-width:160px;max-width:260px;padding:8px 12px;border:1.5px solid var(--g300);border-radius:8px;font-size:14px;font-family:inherit" onkeydown="if(event.key==='Enter')addCatType()"/>
+      <button type="button" class="btn bg btn-sm" onclick="addCatType()">+ Ajouter</button>
+    </div>
+  </div>`;
+}
+async function addCatType(){
+  const emoji=(document.getElementById('new-cat-emoji')?.value||'').trim()||'📂';
+  const label=(document.getElementById('new-cat-label')?.value||'').trim();
+  if(!label){_showSyncToast('⚠️ Saisir un nom de catalogue');return;}
+  const id=label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  if(!id||['academique','spirituel'].includes(id)){_showSyncToast('⚠️ Nom invalide ou réservé');return;}
+  if((cfg.catTypes||[]).find(t=>t.id===id)){_showSyncToast('⚠️ Ce catalogue existe déjà');return;}
+  if(!cfg.catTypes)cfg.catTypes=[];
+  cfg.catTypes.push({id,label,emoji});
+  /* Donner accès à l'admin par défaut */
+  if(!cfg.catAccess)cfg.catAccess={};
+  ['admin'].forEach(r=>{if(!cfg.catAccess[r])cfg.catAccess[r]=[];if(!cfg.catAccess[r].includes(id))cfg.catAccess[r].push(id);});
+  rCatAccessPanel();
+  if(document.getElementById('new-cat-label'))document.getElementById('new-cat-label').value='';
+  if(document.getElementById('new-cat-emoji'))document.getElementById('new-cat-emoji').value='';
+  try{await sbSaveCfg();_cachePut({config:cfg});_showSyncToast('✅ Catalogue créé');}
+  catch(e){cfg.catTypes.pop();rCatAccessPanel();_showSyncToast('⚠️ Erreur sauvegarde');}
+}
+async function delCatType(id){
+  if(['academique','spirituel'].includes(id))return;
+  const def=_getCatTypes().find(t=>t.id===id);
+  const cnt=books.filter(b=>b.catType===id).length;
+  const label=def?def.label:id;
+  if(!confirm(`Supprimer le catalogue "${label}" ?\n\n${cnt>0?`⚠️ ${cnt} livre(s) utilisent ce catalogue (ils passeront à "Académique").`:'Aucun livre n\'utilise ce catalogue.'}\n\nCette action est irréversible.`))return;
+  cfg.catTypes=(cfg.catTypes||[]).filter(t=>t.id!==id);
+  Object.keys(cfg.catAccess||{}).forEach(r=>{cfg.catAccess[r]=(cfg.catAccess[r]||[]).filter(t=>t!==id);});
+  rCatAccessPanel();
+  try{await sbSaveCfg();_cachePut({config:cfg});_showSyncToast('✅ Catalogue supprimé');}
+  catch(e){_showSyncToast('⚠️ Erreur sauvegarde');}
 }
 /* ═══════════════════════════════════════════════════════════════
    DIAGNOSTIC — Détection des anomalies de données
