@@ -317,7 +317,7 @@ function showFbError(msg,detail=''){
   const el=document.getElementById('fb-error');
   if(!el)return;
   el.style.display='block';
-  el.querySelector('span').innerHTML='<strong>'+msg+'</strong>'+(detail?'<br><small style="opacity:.75;font-size:12px">'+detail+'</small>':'');
+  el.querySelector('span').innerHTML='<strong>'+esc(msg)+'</strong>'+(detail?'<br><small style="opacity:.75;font-size:12px">'+detail+'</small>':'');
 }
 
 function showNotFound(){
@@ -360,7 +360,7 @@ function applySpaceTheme(){
     el.innerHTML=txt+`<span style="font-family:'Cormorant Garamond',serif">${esc(SPACE.short)}</span>`;
   });
   const loginTitle=document.getElementById('login-title');
-  if(loginTitle)loginTitle.innerHTML=SPACE.short.replace(/([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ][a-zàâéèêëîïôùûüç]+)([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ].*)/, '$1<span>$2</span>');
+  if(loginTitle)loginTitle.innerHTML=esc(SPACE.short).replace(/([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ][a-zàâéèêëîïôùûüç]+)([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ].*)/, '$1<span>$2</span>');
   const loginSub=document.getElementById('login-tagline');
   if(loginSub)loginSub.textContent=SPACE.tagline;
   if(SPACE.color)applyColorVars(SPACE.color);
@@ -587,7 +587,7 @@ async function loadAllData(){
 
         /* Vérifier expiration */
         const todaySessStr=new Date().toISOString().split('T')[0];
-        if(!userDoc.neverExpires&&userDoc&&userDoc.expiresAt&&userDoc.expiresAt<todaySessStr&&!userDoc.disabled&&userDoc.role!=='admin'&&userDoc.role!=='resident'&&userDoc.role!=='commission'){
+        if(userDoc&&!userDoc.neverExpires&&userDoc.expiresAt&&userDoc.expiresAt<todaySessStr&&!userDoc.disabled&&userDoc.role!=='admin'&&userDoc.role!=='resident'&&userDoc.role!=='commission'){
           sbUpd('users',userDoc.id||sessionData.id,{disabled:true}).catch(()=>{});
           console.warn('[Session] Compte expiré le',userDoc.expiresAt,'— désactivation auto, suppression session');
           localStorage.removeItem('cb_session');
@@ -646,13 +646,13 @@ async function loadAllData(){
     console.error('[ComoéBiblio] Erreur Supabase :', raw);
     if(raw.includes('SPACE_NOT_FOUND')){showNotFound();return;}
     let msg='⚠️ Erreur de connexion';
-    let detail='Erreur : <code>'+raw+'</code>';
+    let detail='Erreur : <code>'+esc(raw)+'</code>';
     if(raw.includes('Failed to fetch')||raw.includes('NetworkError')||raw.includes('net::ERR')){
       msg='📡 Connexion impossible.';
       detail='Vérifiez votre connexion internet. La page va se recharger dans 8 secondes…';
       setTimeout(()=>{if(document.getElementById('fb-error')?.style.display!=='none')location.reload();},8000);
     }
-    const journal=dbg.length?'<br><br><small style="opacity:.6;font-size:11px">Journal : '+dbg.join(' → ')+'</small>':'';
+    const journal=dbg.length?'<br><br><small style="opacity:.6;font-size:11px">Journal : '+esc(dbg.join(' → '))+'</small>':'';
     showFbError(msg, detail+journal);
   }
 }
@@ -1221,12 +1221,23 @@ function resetComTabs(){
 /* ═══════════════════════════════════════════════════════════════
    AUTH (login applicatif par code)
 ═══════════════════════════════════════════════════════════════ */
+const _RL_WIN=30000;const _RL_MAX=5;
+function _rlCheck(key){
+  const now=Date.now();
+  let arr=JSON.parse(localStorage.getItem(key)||'[]').filter(t=>now-t<_RL_WIN);
+  if(arr.length>=_RL_MAX)return Math.ceil((_RL_WIN-(now-arr[0]))/1000);
+  arr.push(now);localStorage.setItem(key,JSON.stringify(arr));return 0;
+}
+function _rlReset(key){localStorage.removeItem(key);}
+
 async function doLogin(){
   const code=document.getElementById('li').value.trim().toLowerCase();
   const errEl=document.getElementById('le');
   const btn=document.getElementById('login-btn');
   errEl.textContent='';
   if(!code){errEl.textContent='Veuillez saisir votre code.';return;}
+  const wait=_rlCheck('cb_rl_login');
+  if(wait>0){errEl.textContent='Trop de tentatives. Réessayez dans '+wait+' secondes.';return;}
   if(btn)btn.disabled=true;
   errEl.textContent='Vérification…';
   try{
@@ -1247,6 +1258,7 @@ async function doLogin(){
       return;
     }
     /* Connexion réussie */
+    _rlReset('cb_rl_login');
     curUser=u;
     errEl.textContent='';
     document.getElementById('li').value='';
@@ -2448,6 +2460,7 @@ function renderPagination(containerId,page,total,perPage,onPage){
   el.innerHTML=btns;
 }
 async function delBk(id){
+  if(!_requireAdmin('delBk'))return;
   const b=books.find(x=>x.id==id);if(!b)return;
   if(!confirm(`Supprimer définitivement "${b.titre}" ?
 Cette action est irréversible.`))return;
@@ -2457,6 +2470,7 @@ Cette action est irréversible.`))return;
   try{await sbDel('books',id);}catch(e){console.error('[delBk]',e.message);alert('❌ Erreur suppression livre : '+e.message);}
 }
 async function togBkStatus(id,src){
+  if(!_requireAdmin('togBkStatus'))return;
   const b=books.find(x=>x.id==id);if(!b)return;
   if(b.status==='missing'){
     if(!confirm(`Marquer "${b.titre}" comme retrouvé et le remettre disponible ?`))return;
@@ -2774,7 +2788,7 @@ function rAdmUs(){
     return html`<tr class="${u.disabled?'user-disabled':''}">
       <td>
         <div style="display:flex;align-items:center;gap:8px">
-          ${safe(u.photoB64?`<img src="${u.photoB64}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--g200)"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--g500);flex-shrink:0">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>`)}
+          ${safe(u.photoB64?`<img src="${esc(u.photoB64)}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--g200)"/>`:`<div style="width:32px;height:32px;border-radius:50%;background:var(--g100);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--g500);flex-shrink:0">${((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase()}</div>`)}
           ${safe(showCode?html`<code class="pl">${u.abbrev}</code>`:`<span style="color:var(--g400);font-size:12px;font-style:italic">🔒</span>`)}
         </div>
       </td>
@@ -3021,10 +3035,10 @@ function showCard(id){
   if(!u)return;
   const initials=((u.prenom[0]||'')+(u.nom[0]||'')).toUpperCase();
   const photoHtml=u.photoB64
-    ?`<img src="${u.photoB64}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.2)"/>`
+    ?`<img src="${esc(u.photoB64)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid white;box-shadow:0 4px 12px rgba(0,0,0,.2)"/>`
     :`<div style="width:80px;height:80px;border-radius:50%;background:var(--gl);border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:white;box-shadow:0 4px 12px rgba(0,0,0,.2)">${initials}</div>`;
   const logoHtml=cfg.logoB64
-    ?`<img src="${cfg.logoB64}" style="height:40px;width:40px;object-fit:contain;border-radius:8px"/>`
+    ?`<img src="${esc(cfg.logoB64)}" style="height:40px;width:40px;object-fit:contain;border-radius:8px"/>`
     :`<div style="width:40px;height:40px;background:rgba(255,255,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px">📚</div>`;
   document.getElementById('m-card-body').innerHTML=html`
     <div style="background:linear-gradient(135deg,#1C4370 0%,#22806B 100%);border-radius:16px;padding:28px;color:white;font-family:'DM Sans',sans-serif">
@@ -5377,10 +5391,9 @@ function gEmo(cat){return catStyle(cat).icon;}
 /* showSuperAdmin() définie plus bas avec la logique complète */
 /* ═══════════════════════════════════════════════════════════════
    SUPER-ADMIN — Mot de passe stocké dans Supabase (super_admin_config.pwdHash)
-   Le hash SHA-256 par défaut est lu depuis Supabase ; si absent, ce fallback
-   est utilisé uniquement lors de la première installation.
+   Aucun hash par défaut dans le code source — le mot de passe doit être
+   défini via le dashboard Supabase avant la première connexion.
 ═══════════════════════════════════════════════════════════════ */
-const SA_DEFAULT_HASH='f0d69d50df9d46dbb367d8ab8265d051e4e15cd15277230b5c8cd0b0aba18fca';
 
 async function saHash(pwd){
   const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pwd));
@@ -5388,17 +5401,17 @@ async function saHash(pwd){
 }
 
 async function saGetStoredHash(){
-  /* Lire depuis super_admin_config (Supabase) — fallback sur hash par défaut si absent */
+  /* Lire depuis super_admin_config (Supabase) — retourne null si absent */
   try{
     _initSb();
     const {data,error}=await sb.from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
     if(error){console.warn('[SA] Supabase erreur:',error.message);}
     else if(data&&data.pwdHash)return{hash:data.pwdHash,isDefault:false,status:200};
-    else{console.log('[SA] super_admin_config absent → hash par défaut');return{hash:SA_DEFAULT_HASH,isDefault:true,status:404};}
+    else{console.log('[SA] super_admin_config absent — aucun hash configuré');return{hash:null,isDefault:true,status:404};}
   }catch(e){
     console.warn('[SA] saGetStoredHash réseau:',e.message);
   }
-  return{hash:SA_DEFAULT_HASH,isDefault:true,status:0};
+  return{hash:null,isDefault:true,status:0};
 }
 
 function showSuperAdmin(){
@@ -5424,17 +5437,24 @@ async function saLogin(){
   const diagEl=document.getElementById('sa-diag');
   const btn=document.getElementById('sa-login-btn');
   if(!pwd){errEl.textContent='Veuillez saisir le mot de passe.';return;}
+  const saWait=_rlCheck('cb_rl_sa');
+  if(saWait>0){errEl.textContent='Trop de tentatives. Réessayez dans '+saWait+' secondes.';return;}
   errEl.textContent='Vérification…';
   if(diagEl)diagEl.style.display='none';
   if(btn)btn.disabled=true;
   try{
     const hashHex=await saHash(pwd);
     const {hash:storedHash,isDefault,status}=await saGetStoredHash();
+    if(!storedHash){
+      errEl.textContent='Aucun mot de passe configuré. Initialisez super_admin_config dans Supabase.';
+      return;
+    }
     if(hashHex!==storedHash){
-      errEl.innerHTML='Mot de passe incorrect.';
+      errEl.textContent='Mot de passe incorrect.';
       return;
     }
     /* Succès */
+    _rlReset('cb_rl_sa');
     errEl.textContent='';
     document.getElementById('sa-login-screen').style.display='none';
     document.getElementById('sa-panel-screen').style.display='block';
@@ -5465,15 +5485,14 @@ async function saDiagnose(){
     const {data,error}=await sb.from('super_admin_config').select('pwdHash').eq('id',1).maybeSingle();
     const storedHashStr=data?.pwdHash?data.pwdHash.substring(0,16)+'...':'(champ absent)';
     const sbStatus=error?('❌ '+error.message):'✅ OK';
-    const usingDefault=data?.pwdHash===SA_DEFAULT_HASH||!data?.pwdHash;
+    const hasCustomPwd=!!(data?.pwdHash);
     diagEl.innerHTML=html`<strong>🔍 Diagnostic super-admin</strong><br>
       Supabase client : ✅ prêt<br>
       super_admin_config : <strong>${sbStatus}</strong><br>
       Hash stocké SB : <code>${storedHashStr}</code><br>
-      Hash par défaut : <code>${SA_DEFAULT_HASH.substring(0,16)}…</code><br>
-      <span style="color:${usingDefault?'#fbbf24':'#4ade80'}">${usingDefault?'⚠️ Mot de passe par défaut actif — changez-le !':'✅ Mot de passe personnalisé'}</span>`;
+      <span style="color:${hasCustomPwd?'#4ade80':'#fbbf24'}">${hasCustomPwd?'✅ Mot de passe configuré':'⚠️ Aucun mot de passe — configurez super_admin_config dans Supabase'}</span>`;
   }catch(e){
-    diagEl.innerHTML='❌ Erreur diagnostic : '+e.message;
+    diagEl.textContent='❌ Erreur diagnostic : '+e.message;
   }
 }
 
@@ -5762,7 +5781,7 @@ function showLoans(){
   /* Logo espace */
   const nbr=document.getElementById('nbr-loans');
   if(nbr&&SPACE)nbr.innerHTML=html`<span id="nbr-logo-loans"></span><span style="font-family:'Cormorant Garamond',serif">${SPACE.short||'ComoéBiblio'}</span>`;
-  if(cfg.logoB64){const lEl=document.getElementById('nbr-logo-loans');if(lEl){lEl.style.cssText='width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:8px;display:inline-block;vertical-align:middle';lEl.outerHTML=`<img src="${cfg.logoB64}" style="width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" alt="logo"/>`;}}
+  if(cfg.logoB64){const lEl=document.getElementById('nbr-logo-loans');if(lEl){lEl.style.cssText='width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:8px;display:inline-block;vertical-align:middle';lEl.outerHTML=`<img src="${esc(cfg.logoB64)}" style="width:28px;height:28px;border-radius:6px;object-fit:cover;margin-right:8px;vertical-align:middle" alt="logo"/>`;}}
   rLoans('active');
 }
 
@@ -5951,6 +5970,7 @@ async function markReturned(loanId){
 }
 
 async function approveLoan(loanId){
+  if(!_requirePrivileged('approveLoan'))return;
   const l=loans.find(x=>x.id==loanId);
   if(!l)return;
   if(!confirm('Approuver l\'emprunt de "'+l.bookTitle+'" par '+l.userName+' ?'))return;
@@ -5991,6 +6011,7 @@ async function approveLoan(loanId){
 }
 
 async function rejectLoan(loanId){
+  if(!_requirePrivileged('rejectLoan'))return;
   const l=loans.find(x=>x.id==loanId);
   if(!l)return;
   if(!confirm('Rejeter la demande d\'emprunt de "'+l.bookTitle+'" par '+l.userName+' ?'))return;
@@ -6016,6 +6037,7 @@ async function rejectLoan(loanId){
 
 
 async function validateReturn(loanId){
+  if(!_requirePrivileged('validateReturn'))return;
   const l=loans.find(x=>x.id==loanId);
   if(!l)return;
   if(!confirm('Valider le retour de "'+l.bookTitle+'" ?'))return;
@@ -6047,6 +6069,7 @@ async function validateReturn(loanId){
 }
 
 async function rejectReturn(loanId){
+  if(!_requirePrivileged('rejectReturn'))return;
   const l=loans.find(x=>x.id==loanId);
   if(!l)return;
   if(!confirm('Rejeter le retour de "'+l.bookTitle+'" ? L\'emprunt repassera en statut actif.'))return;
