@@ -267,7 +267,7 @@ function _getCatTypes(){
 function _populateCatTypeSelect(){
   const el=document.getElementById('bfct');if(!el)return;
   const cur=el.value;
-  el.innerHTML=_getCatTypes().map(t=>`<option value="${t.id}">${t.emoji} ${t.label}</option>`).join('');
+  el.innerHTML=_getCatTypes().map(t=>`<option value="${esc(t.id)}">${esc(t.emoji)} ${esc(t.label)}</option>`).join('');
   if(cur&&[...el.options].some(o=>o.value===cur))el.value=cur;
 }
 let impRaw=[], impHdr=[], impMap=[], impParsed=[];
@@ -892,8 +892,8 @@ async function _fetchAndCache(col, sv){
 
   /* ── Fetch complet : premier chargement ou changement multiple ── */
   const data=await sbGetAll(col);
-  if(col==='books')books=data;
-  else if(col==='loans')loans=data;
+  if(col==='books')books=_dedupById(data);
+  else if(col==='loans')loans=_dedupById(data);
   else if(col==='users'){users=_dedupById(data.map(u=>({...u,id:parseInt(u.id)||u.id})));
     /* Réparer les comptes permanents — une seule fois par session (pas à chaque fetch) */
     if(!sessionStorage.getItem('_cb_repaired')){
@@ -920,10 +920,10 @@ async function _fetchAndCache(col, sv){
         sbUpd('users',u.id,{disabled:true}).catch(()=>{});
     });
   }
-  else if(col==='requests')requests=data;
-  else if(col==='sessions')sessions=data;
-  else if(col==='shelfChecks')shelfChecks=data;
-  else if(col==='registrations')registrations=data;
+  else if(col==='requests')requests=_dedupById(data);
+  else if(col==='sessions')sessions=_dedupById(data);
+  else if(col==='shelfChecks')shelfChecks=_dedupById(data);
+  else if(col==='registrations')registrations=_dedupById(data);
   _cachePut({[col]:data});
   console.log('[RT] Fetch complet',col,'—',data.length,'docs');
 }
@@ -1900,15 +1900,19 @@ function rComT(){
 
 /* Supprimer une demande déjà validée ou rejetée */
 async function delRq(id){
+  if(!_requirePrivileged('delRq'))return;
   const r=requests.find(x=>x.id==id);if(!r)return;
   if(!confirm(`Supprimer définitivement la demande "${r.titre}" ?\n\nCette action est irréversible.`))return;
-  requests=requests.filter(x=>x.id!=id);
-  _cachePut({requests});
-  rAdmRq();rComT&&rComT();updPDFBtn();
-  try{await sbDel('requests',id);}catch(e){console.warn('[delRq]',e.message);}
-  _showSyncToast('🗑️ Demande supprimée');
+  try{
+    await sbDel('requests',id);
+    requests=requests.filter(x=>x.id!=id);
+    _cachePut({requests});
+    rAdmRq();rComT&&rComT();updPDFBtn();
+    _showSyncToast('🗑️ Demande supprimée');
+  }catch(e){console.error('[delRq]',e.message);alert('❌ Erreur suppression demande : '+e.message);}
 }
 async function chgSt(id,s,src){
+  if(!_requirePrivileged('chgSt'))return;
   const r=requests.find(x=>x.id==id);if(!r)return;
   r.status=s;
   try{await sbUpd('requests',id,{status:s});}catch(e){console.error('[chgSt]',e.message);_showSyncToast('⚠️ Statut non sauvegardé');}
@@ -2489,10 +2493,12 @@ async function delBk(id){
   const b=books.find(x=>x.id==id);if(!b)return;
   if(!confirm(`Supprimer définitivement "${b.titre}" ?
 Cette action est irréversible.`))return;
-  const idx=books.findIndex(x=>x.id==id);if(idx!==-1)books.splice(idx,1);
-  _cachePut({books});
-  rAdmBk();rCat();
-  try{await sbDel('books',id);}catch(e){console.error('[delBk]',e.message);alert('❌ Erreur suppression livre : '+e.message);}
+  try{
+    await sbDel('books',id);
+    const idx=books.findIndex(x=>x.id==id);if(idx!==-1)books.splice(idx,1);
+    _cachePut({books});
+    rAdmBk();rCat();
+  }catch(e){console.error('[delBk]',e.message);alert('❌ Erreur suppression livre : '+e.message);}
 }
 async function togBkStatus(id,src){
   if(!_requireAdmin('togBkStatus'))return;
@@ -2851,7 +2857,7 @@ function rAdmUs(){
       </div></td>
     </tr>`;
     }catch(renderErr){
-      console.error('[rAdmUs] Erreur rendu user id='+u.id+' abbrev='+u.abbrev,renderErr);
+      console.error('[rAdmUs] Erreur rendu user id='+u.id,renderErr);
       return html`<tr style="background:#fff5f5"><td colspan="7" style="padding:8px 12px;font-size:12px;color:#dc2626">
         ⚠️ Erreur d'affichage du compte <b>${u.abbrev||'?'}</b> (ID:${u.id}) — <button type="button" class="btn bo btn-xs" onclick="openUM(${u.id})">Ouvrir quand même</button>
       </td></tr>`;
