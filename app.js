@@ -3005,13 +3005,13 @@ function applyLogo(b64){
   /* Toutes les navbars */
   for(let i=0;i<=4;i++){
     const el=document.getElementById('nbr-logo-'+i);
-    if(el) el.innerHTML=b64?`<img src="${b64}" class="nbr-logo" alt="Logo"/>`:'' ;
+    if(el) el.innerHTML=b64?`<img src="${esc(b64)}" class="nbr-logo" alt="Logo"/>`:'' ;
   }
   /* Preview admin */
   const pw=document.getElementById('logo-preview-wrap');
   if(pw){
     pw.innerHTML=b64
-      ?`<img src="${b64}" style="width:100%;height:100%;object-fit:cover;border-radius:12px" alt="Logo"/>`
+      ?`<img src="${esc(b64)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px" alt="Logo"/>`
       :`<span id="logo-preview-ico">📚</span>`;
   }
 }
@@ -3176,7 +3176,7 @@ function openUM(id=null){
     document.getElementById('ufcom').value=u.commune||'';
     ufPhotoB64=u.photoB64||null;
     const prev=document.getElementById('uf-photo-prev');
-    if(prev)prev.innerHTML=ufPhotoB64?`<img src="${ufPhotoB64}" style="width:100%;height:100%;object-fit:cover"/>`:'📷';
+    if(prev)prev.innerHTML=ufPhotoB64?`<img src="${esc(ufPhotoB64)}" style="width:100%;height:100%;object-fit:cover"/>`:'📷';
   }}
   else{
     ['ufid','ufpn','ufnm','ufpro','ufwa','ufcom'].forEach(f=>document.getElementById(f).value='');
