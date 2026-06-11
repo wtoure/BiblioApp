@@ -1,0 +1,14 @@
+# Scripts de migration et debug (usage ponctuel, non publiés)
+migrate-firebase-to-supabase.js
+fix-xss.js
+app.js.fixed
+app.js.bak
+debug-xss.js
+check-schema.js
+check-join.js
+find-safe-needed.js
+fix-safe.js
+
+# Variables d'environnement locales
+.env
+.env.local
