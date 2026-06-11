@@ -1942,14 +1942,18 @@ function rSessList(){
   el.innerHTML=`<div class="sess-grid">${sessions.slice().reverse().map(s=>{
     const cnt=requests.filter(r=>r.sessionId==s.id).length;
     const isOpen=!s.closed&&cfg.currentSessionId==s.id;
-    return html`<div class="sess-card${isOpen?' open-sess':''}" onclick="showSessionDetail(${s.id})">
-      <div class="sess-num">Session N°${s.id} ${safe(isOpen?'<span class="badge bapp">● En cours</span>':'')}</div>
-      <div class="sess-motif">${s.motif}</div>
-      <div class="sess-meta">
-        <span>📅 ${fmtDateLong(s.openDate)}</span>
-        ${safe(s.closed?`<span>🔒 Fermée le ${fmtDateLong(s.closedDate)}</span>`:'')}
-
-        <span class="sess-cnt">📋 ${cnt} demande${cnt>1?'s':''}</span>
+    return html`<div class="sess-card${isOpen?' open-sess':''}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px" onclick="showSessionDetail(${s.id})" style="cursor:pointer">
+        <div style="flex:1;cursor:pointer">
+          <div class="sess-num">Session N°${s.id} ${safe(isOpen?'<span class="badge bapp">● En cours</span>':'')}</div>
+          <div class="sess-motif">${s.motif}</div>
+          <div class="sess-meta">
+            <span>📅 ${fmtDateLong(s.openDate)}</span>
+            ${safe(s.closed?`<span>🔒 Fermée le ${fmtDateLong(s.closedDate)}</span>`:'')}
+            <span class="sess-cnt">📋 ${cnt} demande${cnt>1?'s':''}</span>
+          </div>
+        </div>
+        ${safe(!isOpen?`<button type="button" class="btn bd btn-xs" style="flex-shrink:0;margin-top:2px" onclick="event.stopPropagation();delSess(${s.id})" title="Supprimer cette session et ses demandes">🗑️</button>`:'')}
       </div>
     </div>`;
   }).join('')}</div>`;
@@ -1975,6 +1979,27 @@ function showSessionDetail(sid){
       </tr>`;}).join('')}</tbody>
     </table></div></div>`}`;
   openM('msess');
+}
+
+async function delSess(id){
+  const s=sessions.find(x=>x.id==id);if(!s)return;
+  const cnt=requests.filter(r=>r.sessionId==id).length;
+  if(!confirm(`Supprimer la Session N°${s.id} "${s.motif}" et ses ${cnt} demande(s) ?\nCette action est irréversible.`))return;
+  try{
+    /* Supprimer toutes les demandes liées */
+    const toDelReqs=requests.filter(r=>r.sessionId==id);
+    for(const r of toDelReqs){
+      await sbDel('requests',r.id);
+    }
+    const idx=requests.findIndex(x=>x.id==id);
+    requests.splice(0,requests.length,...requests.filter(r=>r.sessionId!=id));
+    /* Supprimer la session */
+    await sbDel('sessions',id);
+    const si=sessions.findIndex(x=>x.id==id);
+    if(si!==-1)sessions.splice(si,1);
+    _cachePut({sessions,requests});
+    rSessList();rComT();rComSt();
+  }catch(e){console.error('[delSess]',e);alert('❌ Erreur suppression : '+e.message);}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2034,11 +2059,12 @@ function rComUsers(){
   const tb=document.getElementById('com-utb');if(!tb)return;
   const ro=curUser&&curUser.role==='resident';
   if(!users.length){
-    if(!dataReady){tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--g400)">⏳ Chargement…</td></tr>';return;}
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--g400)">Aucun membre.</td></tr>';return;
+    if(!dataReady){tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--g400)">⏳ Chargement…</td></tr>';return;}
+    tb.innerHTML='<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--g400)">Aucun membre.</td></tr>';return;
   }
   const q=(document.getElementById('mbr-search')?.value||'').toLowerCase();
   const list=users.filter(u=>{
+    if(u.role==='admin')return false;
     if(!q)return true;
     return (u.prenom+' '+u.nom+' '+u.abbrev).toLowerCase().includes(q)||u.role.toLowerCase().includes(q);
   });
@@ -2046,7 +2072,6 @@ function rComUsers(){
     const propActive=u.canPropose;
     return html`<tr>
       <td>${safe(ro?'':`<input type="checkbox" class="mbr-chk" data-id="${u.id}" ${mbrSelected.has(u.id)?'checked':''} onchange="onMbrChk(${u.id},this.checked)" style="cursor:pointer"/>`)}</td>
-      <td><code class="pl">${u.abbrev}</code></td>
       <td style="font-weight:500">${u.prenom} ${u.nom}</td>
       <td>${safe(rBdg(u.role))}</td>
       <td style="min-width:140px">
@@ -2067,7 +2092,7 @@ function rComUsers(){
 function onMbrChk(id,v){v?mbrSelected.add(id):mbrSelected.delete(id);updBulkBar();}
 function toggleAllMbrSel(v){
   const q=(document.getElementById('mbr-search')?.value||'').toLowerCase();
-  users.filter(u=>!q||(u.prenom+' '+u.nom+' '+u.abbrev).toLowerCase().includes(q)).forEach(u=>{v?mbrSelected.add(u.id):mbrSelected.delete(u.id);});
+  users.filter(u=>u.role!=='admin'&&(!q||(u.prenom+' '+u.nom+' '+u.abbrev).toLowerCase().includes(q))).forEach(u=>{v?mbrSelected.add(u.id):mbrSelected.delete(u.id);});
   rComUsers();
 }
 function updBulkBar(){
@@ -2763,11 +2788,11 @@ function rAdmUs(){
   const el_cnt=document.getElementById('adm-us-count');
   if(el_cnt)el_cnt.textContent=filteredUsers.length+(filteredUsers.length<users.length?' / '+users.length:'')+' membre(s)'+(expiringSoon?' \u23F3 '+expiringSoon+' expire(nt) bient\u00F4t':'');
   if(!filteredUsers.length){
-    if(!dataReady){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--g400)">&#9203; Chargement des membres&hellip;</td></tr>';return;}
+    if(!dataReady){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--g400)">&#9203; Chargement des membres&hellip;</td></tr>';return;}
     /* Chercher si ce membre existe mais est filtré */
     const totalHidden=users.length-filteredUsers.length;
     const filterHint=admUsFilter!=='all'?`<br><button type="button" class="btn bo btn-sm" style="margin-top:8px" onclick="setAdmUsFilter('all')">Afficher tous les ${users.length} comptes</button>`:'';
-    tb.innerHTML=html`<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--g400)">Aucun membre pour ce filtre.${filterHint}</td></tr>`;return;
+    tb.innerHTML=html`<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--g400)">Aucun membre pour ce filtre.${filterHint}</td></tr>`;return;
   }
   /* Bandeau d'avertissement si des comptes sont cachés par le filtre */
   const hiddenCount=users.length-filteredUsers.length;
@@ -2785,6 +2810,7 @@ function rAdmUs(){
     const expired=u.propUntil&&new Date()>new Date(u.propUntil+'T23:59:59');
     const propActive=u.canPropose&&!expired;
     const showCode=(u.role!=='admin')||(curUser&&u.id==curUser.id);
+    const lastLogin=loginLog.find(l=>l.userId==u.id||l.abbrev===u.abbrev);
     return html`<tr class="${u.disabled?'user-disabled':''}">
       <td>
         <div style="display:flex;align-items:center;gap:8px">
@@ -2811,6 +2837,9 @@ function rAdmUs(){
           return'<div style="font-size:11px;color:#16a34a;margin-top:2px">🟢 Valide jusqu&#39;au '+u.expiresAt+'</div>';
         })())}
       </td>
+      <td style="font-size:12px;color:var(--g500);white-space:nowrap">
+        ${lastLogin?lastLogin.date+' '+lastLogin.time:'—'}
+      </td>
       <td><div style="display:flex;gap:5px;flex-wrap:wrap">
         <button type="button" class="btn bo btn-xs" onclick="openUM(${u.id})">✏️</button>
         <button type="button" class="btn bn btn-xs" onclick="showCard(${u.id})" title="Carte membre">🪪</button>
@@ -2823,7 +2852,7 @@ function rAdmUs(){
     </tr>`;
     }catch(renderErr){
       console.error('[rAdmUs] Erreur rendu user id='+u.id+' abbrev='+u.abbrev,renderErr);
-      return html`<tr style="background:#fff5f5"><td colspan="6" style="padding:8px 12px;font-size:12px;color:#dc2626">
+      return html`<tr style="background:#fff5f5"><td colspan="7" style="padding:8px 12px;font-size:12px;color:#dc2626">
         ⚠️ Erreur d'affichage du compte <b>${u.abbrev||'?'}</b> (ID:${u.id}) — <button type="button" class="btn bo btn-xs" onclick="openUM(${u.id})">Ouvrir quand même</button>
       </td></tr>`;
     }
