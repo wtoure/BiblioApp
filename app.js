@@ -4702,6 +4702,7 @@ function swT(t,b){
   /* Mémoriser l'onglet admin courant */
   try{localStorage.setItem('cb_lasttab',t);}catch(e){}
   const isAdmin=curUser?.role==='admin';
+  if(t==='im')populateExpSelects();
   if(t==='st')rAdmStat();
   if(t==='log'&&isAdmin)rLoginLog();
   if(t==='rq'&&isAdmin)rAdmRq();
@@ -5411,6 +5412,71 @@ function rstImp(){
   document.getElementById('dz').style.display='block';
   ['imp-map','imp-prv','imp-res'].forEach(id=>document.getElementById(id).style.display='none');
 }
+
+/* ── Export Excel ── */
+function populateExpSelects(){
+  const fillSel=(id,vals)=>{const el=document.getElementById(id);if(!el)return;const cur=el.value;
+    const first=el.options[0].text;
+    el.innerHTML=`<option value="">${first}</option>`+[...new Set(vals.filter(v=>v!==null&&v!==undefined&&String(v).trim()))].sort().map(v=>html`<option value="${v}">${v}</option>`).join('');
+    if(cur&&[...el.options].some(o=>o.value===cur))el.value=cur;};
+  const ctEl=document.getElementById('exp-f-ct');
+  if(ctEl){const cur=ctEl.value;
+    ctEl.innerHTML='<option value="">Tous les catalogues</option>';
+    _getCatTypes().forEach(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=`${t.emoji} ${t.label}`;ctEl.appendChild(o);});
+    if(cur&&[...ctEl.options].some(o=>o.value===cur))ctEl.value=cur;}
+  fillSel('exp-f-cat',books.map(b=>b.cat));
+  fillSel('exp-f-sal',books.map(b=>b.salle));
+  fillSel('exp-f-lng',books.map(b=>b.lang));
+  updExpCount();
+}
+function updExpCount(){
+  const el=document.getElementById('exp-count');if(!el)return;
+  const n=_getExpBooks().length;
+  el.textContent=`${n} livre${n!==1?'s':''} à exporter`;
+}
+function _getExpBooks(){
+  const fCt=(document.getElementById('exp-f-ct')?.value||'');
+  const fCat=(document.getElementById('exp-f-cat')?.value||'');
+  const fSal=(document.getElementById('exp-f-sal')?.value||'');
+  const fLng=(document.getElementById('exp-f-lng')?.value||'');
+  const fSt=(document.getElementById('exp-f-st')?.value||'');
+  let list=[...books];
+  if(fCt) list=list.filter(b=>(b.catType||'academique')===fCt);
+  if(fCat)list=list.filter(b=>b.cat===fCat);
+  if(fSal)list=list.filter(b=>b.salle===fSal);
+  if(fLng)list=list.filter(b=>b.lang===fLng);
+  if(fSt) list=list.filter(b=>b.status===fSt);
+  return list;
+}
+function exportXlsx(){
+  const list=_getExpBooks();
+  if(!list.length){alert('Aucun livre ne correspond aux critères sélectionnés.');return;}
+  const ST={available:'Disponible',borrowed:'Emprunté',retired:'Retiré',missing:'Introuvable'};
+  const catDefs=_getCatTypes();
+  const rows=list.map(b=>({
+    'ID':b.id,
+    'Titre':b.titre||'',
+    'Auteur':b.auteur||'',
+    'Catégorie':b.cat||'',
+    'Catalogue':(catDefs.find(t=>t.id===(b.catType||'academique'))?.label)||(b.catType||'academique'),
+    'Salle':b.salle||'',
+    'Placard':b.placard||'',
+    'Étagère':b.etagere||'',
+    'Langue':b.lang||'',
+    'Année':b.annee||'',
+    'Exemplaires':b.expl||1,
+    'Ancien/Nouveau':b.ancienNouv||'',
+    'État':b.etat||'',
+    'Éditeur':b.editeur||'',
+    'Résumé':b.resume||'',
+    'Statut':ST[b.status]||b.status||'',
+  }));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Catalogue');
+  XLSX.writeFile(wb,`catalogue_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
 function gEmo(cat){return catStyle(cat).icon;}
 
 

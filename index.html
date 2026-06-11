@@ -515,6 +515,37 @@
     </div>
     <!-- IMPORT -->
     <div id="ap-im" class="ap">
+      <!-- EXPORT EXCEL -->
+      <div class="pbox" style="border-left-color:var(--green);margin-bottom:28px">
+        <h3 style="margin:0 0 4px">📤 Exporter le catalogue en Excel</h3>
+        <p style="color:var(--g500);font-size:13px;margin:0 0 14px">Choisissez des filtres pour restreindre l'export, ou laissez tout vide pour exporter tous les livres.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <select id="exp-f-ct" onchange="updExpCount()" style="flex:1;min-width:150px;padding:7px 10px;border:1px solid var(--g200);border-radius:6px;font-size:13px;background:white">
+            <option value="">Tous les catalogues</option>
+          </select>
+          <select id="exp-f-cat" onchange="updExpCount()" style="flex:1;min-width:150px;padding:7px 10px;border:1px solid var(--g200);border-radius:6px;font-size:13px;background:white">
+            <option value="">Toutes les catégories</option>
+          </select>
+          <select id="exp-f-sal" onchange="updExpCount()" style="flex:1;min-width:130px;padding:7px 10px;border:1px solid var(--g200);border-radius:6px;font-size:13px;background:white">
+            <option value="">Toutes les salles</option>
+          </select>
+          <select id="exp-f-lng" onchange="updExpCount()" style="flex:1;min-width:130px;padding:7px 10px;border:1px solid var(--g200);border-radius:6px;font-size:13px;background:white">
+            <option value="">Toutes les langues</option>
+          </select>
+          <select id="exp-f-st" onchange="updExpCount()" style="flex:1;min-width:130px;padding:7px 10px;border:1px solid var(--g200);border-radius:6px;font-size:13px;background:white">
+            <option value="">Tous les statuts</option>
+            <option value="available">Disponible</option>
+            <option value="borrowed">Emprunté</option>
+            <option value="retired">Retiré</option>
+            <option value="missing">Introuvable</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <button type="button" class="btn bg" onclick="exportXlsx()">⬇️ Exporter Excel</button>
+          <span id="exp-count" style="font-size:13px;color:var(--g500)"></span>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--g200);margin-bottom:24px"></div>
       <div class="al ai" style="margin-bottom:20px">📋 <strong>Import de votre base de données.</strong> Formats : <strong>CSV</strong> (séparateur ; ou ,) et <strong>Excel</strong> (.xlsx, .xls).</div>
       <div class="dz" id="dz" onclick="document.getElementById('fi').click()" ondragover="dzOv(event)" ondragleave="dzLv()" ondrop="dzDp(event)">
         <div class="dzico">📂</div><h3>Glissez votre fichier ici</h3><p>ou cliquez pour sélectionner</p>
