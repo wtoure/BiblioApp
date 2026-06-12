@@ -1292,7 +1292,7 @@ async function doLogin(){
   }
 }
 document.getElementById('li').addEventListener('keypress',e=>{if(e.key==='Enter')doLogin();});
-function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
+function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;_admLoginLogLoaded=false;loginLog=[];localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
 function showAdm(){
   if(!curUser)return;
   const isAdmin=curUser.role==='admin';
@@ -2760,6 +2760,7 @@ async function updN(id,v){
 function countAdmins(){return users.filter(u=>u.role==='admin').length;}
 let admUsFilter='all';
 let _admUsRefreshed=false; /* true après le premier fetch Supabase depuis cette session */
+let _admLoginLogLoaded=false; /* true une fois loginLog chargé pour la colonne "Dernière connexion" */
 function setAdmUsFilter(f){
   admUsFilter=f;
   ['all','active','expired','disabled'].forEach(k=>{
@@ -2778,6 +2779,14 @@ function rAdmUs(){
   if(!_admUsRefreshed&&dataReady){
     _admUsRefreshed=true;
     _fetchAndCache('users',null).then(()=>rAdmUs()).catch(()=>{});
+  }
+  /* Charger loginLog en arrière-plan si pas encore fait — nécessaire pour la colonne "Dernière connexion" */
+  if(!_admLoginLogLoaded&&dataReady){
+    _admLoginLogLoaded=true;
+    sbGetAll('loginLog').then(logD=>{
+      loginLog=logD.sort((a,b)=>(b.id||0)-(a.id||0)).slice(0,300);
+      rAdmUs();
+    }).catch(()=>{});
   }
   const gO=cfg.openAll&&(!cfg.openUntil||new Date()<=new Date(cfg.openUntil+'T23:59:59'));
   const today3=new Date().toISOString().split('T')[0];
