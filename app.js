@@ -6194,23 +6194,9 @@ async function rejectReturn(loanId){
 /* ═══════════════════════════════════════════════════════════════
    DÉMARRAGE
 ═══════════════════════════════════════════════════════════════ */
-/* Fix tactile barres d'onglets : évite le conflit scroll horizontal / clic.
-   Quand le doigt bouge de moins de 8px → clic immédiat sans délai 300ms.
-   Au-delà → scroll normal de la barre, pas de déclenchement d'onglet. */
-(function _initTabTouch(){
-  document.querySelectorAll('.anv').forEach(nav=>{
-    let tx=0,ty=0;
-    nav.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:true});
-    nav.addEventListener('touchend',e=>{
-      const b=e.target.closest('.at');
-      if(!b||b.disabled)return;
-      if(Math.abs(e.changedTouches[0].clientX-tx)<8&&Math.abs(e.changedTouches[0].clientY-ty)<8){
-        e.preventDefault();
-        b.click();
-      }
-    },{passive:false});
-  });
-})();
+/* Note : la fiabilité tactile des onglets est assurée par le CSS
+   (touch-action:manipulation + cibles 44px). Le clic natif gère
+   déjà la distinction tap/scroll — pas de gestionnaire JS custom. */
 
 /* Failsafe : masquer l'écran de démarrage après 12s quoi qu'il arrive */
 setTimeout(()=>{const sp=document.getElementById('cb-splash');if(sp)sp.remove();},12000);
