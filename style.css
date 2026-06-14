@@ -173,7 +173,7 @@ tr:hover td{background:var(--g50)}
 .bdis{background:#fef2f2;color:#b91c1c}
 /* TABS */
 .anv{background:white;padding:0 36px;border-bottom:1px solid var(--g200);display:flex;overflow-x:auto}
-.at{padding:15px 22px;border:none;background:none;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap}
+.at{padding:15px 22px;border:none;background:none;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--g500);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
 .at:hover{color:var(--navy)}.at.active{color:var(--navy);border-bottom-color:var(--navy)}
 .ap{display:none}.ap.active{display:block}
 /* AUTH BOX */
@@ -449,8 +449,9 @@ code.pl{background:var(--g100);padding:2px 8px;border-radius:5px;font-size:13px;
 @media(max-width:768px){
   /* Onglets admin : pills tactiles défilables */
   .anv{padding:8px 12px;gap:6px;background:var(--g50);border-bottom:1px solid var(--g200);position:sticky;top:54px;z-index:90}
-  .at{padding:9px 16px!important;font-size:13px!important;border-radius:20px;border-bottom:none!important;background:white;border:1px solid var(--g200)!important;flex-shrink:0;font-weight:600}
+  .at{padding:0 16px!important;min-height:44px!important;display:inline-flex!important;align-items:center!important;font-size:13px!important;border-radius:22px;border-bottom:none!important;background:white;border:1px solid var(--g200)!important;flex-shrink:0;font-weight:600}
   .at.active{background:var(--navy)!important;color:white!important;border-color:var(--navy)!important}
+  .at:active{opacity:.75}
   .at:hover{color:inherit}
 
   /* Cibles tactiles plus grandes */
@@ -477,8 +478,8 @@ code.pl{background:var(--g100);padding:2px 8px;border-radius:5px;font-size:13px;
   /* Catalogue public : 2 colonnes au lieu d'1 pour mieux remplir l'écran */
   #pub-cgrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important;gap:10px!important}
 
-  /* Onglets admin encore plus compacts */
-  .at{padding:8px 13px!important;font-size:12px!important}
+  /* Onglets admin : taille réduite mais cible tactile conservée */
+  .at{padding:0 12px!important;font-size:12px!important}
 
   /* Modaux : bottom-sheet plein écran */
   .modal{max-height:92vh}
@@ -493,7 +494,7 @@ code.pl{background:var(--g100);padding:2px 8px;border-radius:5px;font-size:13px;
 
 @media(max-width:360px){
   #pub-cgrid{grid-template-columns:1fr 1fr!important;gap:8px!important}
-  .at{padding:7px 11px!important;font-size:11px!important}
+  .at{padding:0 10px!important;font-size:11px!important}
 }
 
 /* ═══════════════════════════════════════════════════════════
