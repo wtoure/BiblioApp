@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from '@/lib/auth'
 import { AppShell } from '@/components/AppShell'
 import { Login } from '@/pages/Login'
 import { Catalogue } from '@/pages/Catalogue'
+import { BookDetail } from '@/pages/BookDetail'
+import { PublicCatalogue } from '@/pages/PublicCatalogue'
 import { Placeholder } from '@/pages/Placeholder'
 
 const queryClient = new QueryClient()
@@ -24,6 +26,9 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Routes>
+      {/* Vue publique — sans authentification */}
+      <Route path="/book/:code" element={<PublicCatalogue />} />
+
       <Route path="/login" element={<Login />} />
       <Route
         element={
@@ -33,6 +38,7 @@ function Router() {
         }
       >
         <Route path="/catalogue" element={<Catalogue />} />
+        <Route path="/livre/:id" element={<BookDetail />} />
         <Route path="/demandes" element={<Placeholder title="Demandes" phase="Phase 3" />} />
         <Route path="/emprunts" element={<Placeholder title="Emprunts" phase="Phase 4" />} />
         <Route path="/admin" element={<Placeholder title="Administration" phase="Phase 5" />} />
