@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*.local
+.vercel
+.DS_Store
+
+# Artefacts de build TypeScript (composite)
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

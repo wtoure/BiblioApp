@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-slate-100 text-slate-800 font-sans antialiased;
+    /* Empêche tout débordement horizontal sur mobile */
+    overflow-x: hidden;
+  }
+  /* Cibles tactiles confortables sur les contrôles natifs */
+  button,
+  select,
+  input,
+  a {
+    touch-action: manipulation;
+  }
+}
+
+/* Zone de sécurité (encoches) pour la barre de navigation du bas */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
