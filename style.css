@@ -535,3 +535,68 @@ body.mob-nav-lock{overflow:hidden}
   /* Selects filtres : pleine largeur sur très petit écran */
   [id^="adm-f-"],[id^="ca-f-"]{max-width:100%;width:100%}
 }
+
+/* ═══════════════════════════════════════════════════════════
+   APPLI MOBILE — Barre de navigation du bas + sélecteur de section
+   Desktop : masqués (navigation par hamburger + onglets inchangée).
+   Mobile  : barre du bas fixe + <select> natif (tap 100% fiable).
+   ═══════════════════════════════════════════════════════════ */
+.bnav{display:none}
+.sect-picker{display:none}
+
+@media(max-width:768px){
+  /* ── Barre de navigation fixe en bas ── */
+  .bnav{
+    display:flex;
+    position:fixed;left:0;right:0;bottom:0;z-index:150;
+    background:#fff;
+    border-top:1px solid var(--g200);
+    box-shadow:0 -2px 16px rgba(28,67,112,.10);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .bni-btn{
+    flex:1;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    border:none;background:none;
+    min-height:58px;padding:7px 2px;
+    font-family:'DM Sans',sans-serif;font-size:10.5px;font-weight:600;
+    color:var(--g500);cursor:pointer;
+    touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+    transition:color .15s;
+  }
+  .bni-btn .bni{font-size:22px;line-height:1;transition:transform .15s}
+  .bni-btn .bnl{letter-spacing:.2px;white-space:nowrap}
+  .bni-btn.active{color:var(--navy)}
+  .bni-btn.active .bni{transform:translateY(-2px) scale(1.08)}
+  .bni-btn:active{background:var(--g50)}
+
+  /* Espace sous le contenu pour ne pas être masqué par la barre du bas */
+  #vc.active,#vca.active,#vcom.active,#vadm.active,#vstat.active,#vloans.active{
+    padding-bottom:calc(66px + env(safe-area-inset-bottom));
+  }
+
+  /* Hamburger masqué : navigation secondaire via le bouton "Plus" */
+  .hmb{display:none!important}
+
+  /* ── Sélecteur de section : remplace la barre d'onglets défilante ── */
+  .anv{display:none!important}
+  .sect-picker{
+    display:block;
+    width:calc(100% - 24px);
+    margin:10px 12px;
+    padding:13px 42px 13px 16px;
+    font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;
+    color:var(--navy);
+    background-color:#fff;
+    border:1.5px solid var(--g200);
+    border-radius:12px;
+    box-shadow:var(--sm);
+    -webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%231C4370' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;
+    background-position:right 15px center;
+    position:sticky;top:54px;z-index:90;
+    touch-action:manipulation;
+  }
+  .sect-picker:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px rgba(28,67,112,.12)}
+}

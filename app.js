@@ -1132,6 +1132,7 @@ function sv(id){
   if(curUser&&['vc','vca','vadm'].includes(id)){
     try{localStorage.setItem('cb_lastview',id);}catch(e){}
   }
+  try{bBottomNav(id);}catch(e){console.error('[bnav]',e);}
 }
 /* Masquer l'écran de démarrage une fois qu'une vue est affichée */
 function _hideSplash(){
@@ -1204,6 +1205,89 @@ function sChip(ai,ni){
   if(!curUser)return;
   document.getElementById(ai).textContent=((curUser.prenom[0]||'')+(curUser.nom[0]||'')).toUpperCase();
   document.getElementById(ni).textContent=curUser.prenom+' '+curUser.nom;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NAVIGATION MOBILE — Barre du bas + sélecteur de section
+   (visibles uniquement sur mobile via CSS ; desktop inchangé)
+═══════════════════════════════════════════════════════════════ */
+const _VIEW_DRAWER={vc:'nl0',vca:'nl1',vcom:'nl2',vadm:'nl3',vstat:'nl4',vloans:'nl-loans-links'};
+
+/* Barre de navigation fixe en bas : destinations principales selon le rôle
+   + bouton "Plus" qui ouvre le tiroir complet de la vue courante. */
+function bBottomNav(av){
+  const bn=_ensureBottomNav();
+  if(!bn)return;
+  if(!curUser||!_VIEW_DRAWER[av]){bn.style.display='none';return;}
+  bn.style.display='';
+  const r=curUser.role,tabs=curUser.tabs||[],hasTab=k=>r==='admin'||tabs.includes(k);
+  /* Destinations par ordre de priorité (les 4 premières gardées + "Plus") */
+  const items=[{ic:'📚',lb:'Catalogue',vw:'vc',fn:showCat}];
+  if(r==='commission'||r==='admin'||r==='resident')items.push({ic:'📋',lb:'Demandes',vw:'vcom',fn:showCom});
+  if(r==='admin'||r==='validator'||hasTab('loans_validator'))items.push({ic:'📖',lb:'Emprunts',vw:'vloans',fn:showLoans});
+  if(r==='admin')items.push({ic:'🛠️',lb:'Admin',vw:'vadm',fn:showAdm});
+  else if(hasTab('members')||hasTab('stats'))items.push({ic:'⚙️',lb:'Gestion',vw:'vadm',fn:showAdm});
+  if(r==='enrol')items.push({ic:'📝',lb:'Saisie',vw:'vca',fn:showCA});
+  if(r==='commission')items.push({ic:'📊',lb:'Stats',vw:'vstat',fn:showStat});
+  const primary=items.slice(0,4);
+  bn.innerHTML='';
+  primary.forEach(it=>{
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='bni-btn'+(it.vw===av?' active':'');
+    b.innerHTML=`<span class="bni">${it.ic}</span><span class="bnl">${it.lb}</span>`;
+    b.onclick=()=>{try{it.fn();}catch(e){console.error('[bnav]',e);}};
+    bn.appendChild(b);
+  });
+  const plus=document.createElement('button');
+  plus.type='button';plus.className='bni-btn';
+  plus.innerHTML='<span class="bni">⋯</span><span class="bnl">Plus</span>';
+  plus.onclick=()=>{const d=_VIEW_DRAWER[av];if(d){try{bNav(d,av);}catch(e){}togMobNav(d);}};
+  bn.appendChild(plus);
+}
+function _ensureBottomNav(){
+  let bn=document.getElementById('bottomnav');
+  if(!bn){
+    bn=document.createElement('nav');
+    bn.id='bottomnav';bn.className='bnav';
+    bn.setAttribute('aria-label','Navigation principale');
+    document.body.appendChild(bn);
+  }
+  return bn;
+}
+
+/* Sélecteur de section (remplace la barre d'onglets .anv défilante sur mobile).
+   Contrôle natif <select> → tap toujours fiable, aucun conflit de défilement. */
+function _refreshSectPicker(nav){
+  if(!nav)return;
+  let sel=nav._picker;
+  if(!sel){
+    sel=document.createElement('select');
+    sel.className='sect-picker';
+    sel.setAttribute('aria-label','Choisir une section');
+    sel.addEventListener('change',()=>{const b=(nav._pbtns||[])[+sel.value];if(b)b.click();});
+    nav.parentNode.insertBefore(sel,nav);
+    nav._picker=sel;
+  }
+  const btns=[...nav.querySelectorAll('.at')].filter(b=>b.style.display!=='none'&&!b.hidden);
+  nav._pbtns=btns;
+  sel.innerHTML='';
+  btns.forEach((b,i)=>{
+    const o=document.createElement('option');
+    o.value=i;
+    /* Libellé = texte direct du bouton, sans les badges (spans de compteur) */
+    let label='';
+    b.childNodes.forEach(n=>{if(n.nodeType===3)label+=n.textContent;});
+    label=label.replace(/\s+/g,' ').trim();
+    o.textContent=label||b.textContent.replace(/\s+/g,' ').trim();
+    sel.appendChild(o);
+  });
+  _syncSectPicker(nav);
+}
+function _syncSectPicker(nav){
+  if(!nav||!nav._picker||!nav._pbtns)return;
+  const i=nav._pbtns.findIndex(b=>b.classList.contains('active'));
+  if(i>=0)nav._picker.value=String(i);
 }
 function resetAdmTabs(){
   document.querySelectorAll('#vadm .at').forEach(x=>x.classList.remove('active'));
@@ -1350,6 +1434,7 @@ function showAdm(){
   ['cat-search','cat-f-lng','cat-f-cat'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const newOnlyBtn=document.getElementById('cat-new-only');if(newOnlyBtn)newOnlyBtn.classList.remove('active');
   const featBtn=document.getElementById('cat-feat-only');if(featBtn)featBtn.classList.remove('active');
+  try{_refreshSectPicker(document.querySelector('#vadm .anv'));}catch(e){}
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1852,11 +1937,13 @@ function showCom(){
   document.getElementById('tab-mbr').style.display=ro?'none':'';
   document.getElementById('com-col-action').textContent=ro?'':'Changer';
   rComSt();rComT();rComAuth();rComUsers();rSessList();updPDFBtn();
+  try{_refreshSectPicker(document.querySelector('#vcom .anv'));}catch(e){}
 }
 function swCom(t,b){
   document.querySelectorAll('#vcom .at').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   ['dem','sess','auth','mbr'].forEach(id=>{const el=document.getElementById('com-'+id);if(el)el.classList.remove('active');});
   document.getElementById('com-'+t).classList.add('active');
+  try{_syncSectPicker(document.querySelector('#vcom .anv'));}catch(e){}
   if(t==='sess')rSessList();
 }
 function rComSt(){
@@ -4714,6 +4801,7 @@ function swT(t,b){
   document.querySelectorAll('#vadm .at').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   document.querySelectorAll('#vadm .ap').forEach(p=>p.classList.remove('active'));
   const panel=document.getElementById('ap-'+t);if(panel)panel.classList.add('active');
+  try{_syncSectPicker(document.querySelector('#vadm .anv'));}catch(e){}
   /* Mémoriser l'onglet admin courant */
   try{localStorage.setItem('cb_lasttab',t);}catch(e){}
   const isAdmin=curUser?.role==='admin';

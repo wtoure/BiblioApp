@@ -15,6 +15,7 @@ const MIME = {
   '.ico':  'image/x-icon',
   '.svg':  'image/svg+xml',
   '.woff2':'font/woff2',
+  '.webmanifest':'application/manifest+json; charset=utf-8',
 };
 
 http.createServer((req, res) => {
