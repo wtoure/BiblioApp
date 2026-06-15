@@ -6194,9 +6194,43 @@ async function rejectReturn(loanId){
 /* ═══════════════════════════════════════════════════════════════
    DÉMARRAGE
 ═══════════════════════════════════════════════════════════════ */
-/* Note : la fiabilité tactile des onglets est assurée par le CSS
-   (touch-action:manipulation + cibles 44px). Le clic natif gère
-   déjà la distinction tap/scroll — pas de gestionnaire JS custom. */
+/* Fiabilise le tap sur les barres d'onglets scrollables (.anv).
+   Problème : la barre défile horizontalement ; un micro-déplacement du
+   doigt pendant le tap fait que le navigateur annule le click natif
+   (« ne fonctionne pas toujours »). Solution : sur un tap quasi-immobile
+   (< 10px), on déclenche l'onglet nous-mêmes via Pointer Events.
+   - Tactile uniquement (souris/desktop : click natif inchangé).
+   - Délégation sur document (capte aussi les onglets re-rendus).
+   - Le click natif qui suit notre tap est avalé pour éviter un double appel. */
+(function _initTabTap(){
+  let sx=0,sy=0,moved=false,downBtn=null,synthBtn=null,synthAt=0;
+  const findTab=t=>(t&&t.closest)?t.closest('.at'):null;
+  document.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='mouse'){downBtn=null;return;}
+    const b=findTab(e.target);
+    downBtn=b;sx=e.clientX;sy=e.clientY;moved=false;
+  },true);
+  document.addEventListener('pointermove',e=>{
+    if(downBtn&&(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10))moved=true;
+  },true);
+  document.addEventListener('pointercancel',()=>{downBtn=null;},true);
+  document.addEventListener('pointerup',e=>{
+    if(e.pointerType==='mouse')return;
+    const b=findTab(e.target);
+    if(downBtn&&b===downBtn&&!moved&&!b.disabled){
+      b.click();                       /* laisse passer notre clic synthétique */
+      synthBtn=b;synthAt=Date.now();   /* puis arme le garde pour le clic natif suivant */
+    }
+    downBtn=null;
+  },true);
+  /* Avale le click natif émis juste après notre tap synthétique (anti-doublon) */
+  document.addEventListener('click',e=>{
+    const b=findTab(e.target);
+    if(b&&b===synthBtn&&Date.now()-synthAt<600){
+      synthBtn=null;e.stopPropagation();e.preventDefault();
+    }
+  },true);
+})();
 
 /* Failsafe : masquer l'écran de démarrage après 12s quoi qu'il arrive */
 setTimeout(()=>{const sp=document.getElementById('cb-splash');if(sp)sp.remove();},12000);
