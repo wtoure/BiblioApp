@@ -503,6 +503,11 @@ code.pl{background:var(--g100);padding:2px 8px;border-radius:5px;font-size:13px;
 .mob-nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:198;-webkit-tap-highlight-color:transparent}
 .mob-nav-overlay.visible{display:block}
 body.mob-nav-lock{overflow:hidden}
+/* Quand le tiroir est ouvert, remonter la barre .nb (et donc le tiroir qu'elle
+   contient) AU-DESSUS de l'overlay. Sans ça, .nb crée un contexte d'empilement
+   à z-index:100 < 198 (overlay), donc l'overlay couvre le tiroir et intercepte
+   les taps (le bouton Déconnexion semblait « ne rien faire »). */
+body.mob-nav-lock .nb{z-index:199}
 
 @media(max-width:768px){
   /* Hamburger plus grand pour confort tactile (44px = minimum recommandé) */
