@@ -5,6 +5,11 @@ import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    port: 5180, // port dédié à la v2 (évite la collision avec d'autres projets sur 5173)
+    strictPort: true, // échoue clairement si 5180 est pris, au lieu de basculer en silence
+    host: true, // expose sur le réseau local → testable depuis le téléphone
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
