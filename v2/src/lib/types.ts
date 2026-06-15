@@ -24,6 +24,7 @@ export interface Book {
   etagere: string
   annee: number | null
   expl: number
+  ancienNouv?: string
   emoji: string
   featured: boolean
   status: 'available' | 'borrowed' | 'retired' | 'missing'

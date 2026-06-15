@@ -22,7 +22,7 @@
 - [x] Liste paginée (1800+ livres), recherche, filtre Académique/Spirituel
 - [x] Fiche livre `/livre/:id`
 - [x] Vue publique `/book/:code` (sans connexion)
-- [ ] Filtres avancés (langue, salle, nouveautés) — cf. catalogue desktop
+- [x] Filtres avancés (langue, salle, nouveautés) — cf. catalogue desktop
 - [ ] Pagination/scroll infini si lenteur sur 1800+ items
 
 ## Phase 2 — Profil & rôles
@@ -63,4 +63,4 @@
 ---
 
 ### Journal (dernière action)
-- 2026-06-15 — Phase 0 + Phase 1 (catalogue, fiche, vue publique) terminées. Prochaine : Phase 1 filtres avancés, puis Phase 2.
+- 2026-06-15 — Filtres avancés catalogue (langue, salle, nouveautés) + panneau repliable. Build OK. Prochaine : Phase 2 (Mon profil), puis le reste de Phase 2.
