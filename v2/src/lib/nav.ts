@@ -45,6 +45,8 @@ export function canAccess(path: string, role: Role, tabs: string[] = []): boolea
       return role === 'admin' || role === 'commission' || has('stats')
     case '/saisie':
       return role === 'enrol' || role === 'admin'
+    case '/proposer':
+      return ['member', 'resident', 'commission', 'admin'].includes(role)
     default:
       return true
   }

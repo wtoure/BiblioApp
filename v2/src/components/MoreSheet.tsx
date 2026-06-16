@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
+import { canAccess } from '@/lib/nav'
 
 interface Props {
   open: boolean
@@ -28,6 +29,9 @@ export function MoreSheet({ open, onClose }: Props) {
 
   const links: { to: string; label: string; icon: string }[] = [
     { to: '/catalogue', label: 'Catalogue', icon: '📚' },
+    ...(canAccess('/proposer', user.role, user.tabs)
+      ? [{ to: '/proposer', label: 'Proposer un livre', icon: '📝' }]
+      : []),
     { to: '/profil', label: 'Mon profil', icon: '👤' },
     { to: '/guide', label: 'Guide', icon: '❓' },
     { to: '/installer', label: "Installer l'app", icon: '📲' },

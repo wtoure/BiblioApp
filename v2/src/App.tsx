@@ -14,6 +14,7 @@ import { Emprunts } from '@/pages/Emprunts'
 import { Admin } from '@/pages/Admin'
 import { Stats } from '@/pages/Stats'
 import { InstallGuide } from '@/pages/InstallGuide'
+import { Proposer } from '@/pages/Proposer'
 import { Placeholder } from '@/pages/Placeholder'
 
 const queryClient = new QueryClient()
@@ -97,6 +98,14 @@ function Router() {
         <Route path="/profil" element={<Profile />} />
         <Route path="/guide" element={<Guide />} />
         <Route path="/installer" element={<InstallGuide />} />
+        <Route
+          path="/proposer"
+          element={
+            <Access path="/proposer">
+              <Proposer />
+            </Access>
+          }
+        />
         <Route index element={<Navigate to="/catalogue" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/catalogue" replace />} />

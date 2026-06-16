@@ -33,7 +33,7 @@
 
 ## Phase 3 — Demandes (commission/membre/résident)
 - [x] Liste des demandes + filtres par statut + stats
-- [ ] Créer une demande (membre) — à compléter (les membres n'atteignent pas /demandes ; flux depuis catalogue à porter)
+- [x] Créer une demande (membre/résident/commission) — page /proposer (nextId nxR, session ouverte requise) — écriture LIVE à relire
 - [x] Sessions de demandes (liste lecture : statut, motif, compteur)
 - [x] Validation/rejet (commission) — ÉCRITURE LIVE (changeStatus → book_requests) — À RELIRE avant prod
 - [ ] Suppression de session (cf. `delSess`) — à compléter (écriture, à relire)
