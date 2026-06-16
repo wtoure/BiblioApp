@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from './supabase'
 import { SPACE_ID } from './space'
+import { logLogin } from './loginLog'
 import type { User } from './types'
 
 const SESSION_KEY = 'cb2_session'
@@ -64,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (u.disabled) throw new Error('Ce compte est désactivé.')
     localStorage.setItem(SESSION_KEY, JSON.stringify({ id: u.id, abbrev: u.abbrev }))
     setUser(u)
+    void logLogin(u) // journalisation best-effort, non bloquante
     return u
   }
 

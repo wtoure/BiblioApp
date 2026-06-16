@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/PageHeader'
 import { SectionPicker, type Section } from '@/components/SectionPicker'
@@ -12,6 +12,9 @@ const SECTIONS: Section[] = [
   { key: 'academique', label: 'Académique' },
   { key: 'spirituel', label: 'Spirituel' },
 ]
+
+// Rendu incrémental : on n'affiche pas les ~1 800 cartes d'un coup (lag mobile).
+const PAGE = 30
 
 export function Catalogue() {
   const { user } = useAuth()
@@ -60,6 +63,15 @@ export function Catalogue() {
   }, [books, section, q, lang, salle, newOnly, canSpiritual])
 
   const activeFilters = (lang ? 1 : 0) + (salle ? 1 : 0) + (newOnly ? 1 : 0)
+
+  // Réinitialise le rendu incrémental dès qu'un filtre change.
+  const [limit, setLimit] = useState(PAGE)
+  useEffect(() => {
+    setLimit(PAGE)
+  }, [section, q, lang, salle, newOnly, canSpiritual])
+
+  const visible = filtered.slice(0, limit)
+  const remaining = filtered.length - visible.length
 
   return (
     <div>
@@ -125,16 +137,27 @@ export function Catalogue() {
         )}
 
         {!isLoading && !error && (
-          <ul className="space-y-2 pb-4">
-            {filtered.map((b) => (
-              <li key={b.id}>
-                <BookCard book={b} onClick={() => navigate(`/livre/${b.id}`)} />
-              </li>
-            ))}
-            {filtered.length === 0 && (
-              <li className="py-10 text-center text-slate-400">Aucun livre trouvé.</li>
+          <>
+            <ul className="space-y-2 pb-2">
+              {visible.map((b) => (
+                <li key={b.id}>
+                  <BookCard book={b} onClick={() => navigate(`/livre/${b.id}`)} />
+                </li>
+              ))}
+              {filtered.length === 0 && (
+                <li className="py-10 text-center text-slate-400">Aucun livre trouvé.</li>
+              )}
+            </ul>
+            {remaining > 0 && (
+              <button
+                type="button"
+                onClick={() => setLimit((l) => l + PAGE)}
+                className="mb-4 w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-navy shadow-card active:bg-slate-50"
+              >
+                Afficher plus ({remaining} restant{remaining > 1 ? 's' : ''})
+              </button>
             )}
-          </ul>
+          </>
         )}
       </div>
     </div>
