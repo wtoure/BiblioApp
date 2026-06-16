@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { canAccess } from '@/lib/nav'
 import { AppShell } from '@/components/AppShell'
 import { Login } from '@/pages/Login'
 import { Catalogue } from '@/pages/Catalogue'
@@ -25,6 +26,13 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** Garde par rôle : redirige vers le catalogue si la route n'est pas autorisée. */
+function Access({ path, children }: { path: string; children: React.ReactNode }) {
+  const { user } = useAuth()
+  if (user && !canAccess(path, user.role, user.tabs)) return <Navigate to="/catalogue" replace />
+  return <>{children}</>
+}
+
 function Router() {
   return (
     <Routes>
@@ -41,11 +49,46 @@ function Router() {
       >
         <Route path="/catalogue" element={<Catalogue />} />
         <Route path="/livre/:id" element={<BookDetail />} />
-        <Route path="/demandes" element={<Placeholder title="Demandes" phase="Phase 3" />} />
-        <Route path="/emprunts" element={<Placeholder title="Emprunts" phase="Phase 4" />} />
-        <Route path="/admin" element={<Placeholder title="Administration" phase="Phase 5" />} />
-        <Route path="/stats" element={<Placeholder title="Statistiques" phase="Phase 5" />} />
-        <Route path="/saisie" element={<Placeholder title="Saisie catalogue" phase="Phase 1" />} />
+        <Route
+          path="/demandes"
+          element={
+            <Access path="/demandes">
+              <Placeholder title="Demandes" phase="Phase 3" />
+            </Access>
+          }
+        />
+        <Route
+          path="/emprunts"
+          element={
+            <Access path="/emprunts">
+              <Placeholder title="Emprunts" phase="Phase 4" />
+            </Access>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <Access path="/admin">
+              <Placeholder title="Administration" phase="Phase 5" />
+            </Access>
+          }
+        />
+        <Route
+          path="/stats"
+          element={
+            <Access path="/stats">
+              <Placeholder title="Statistiques" phase="Phase 5" />
+            </Access>
+          }
+        />
+        <Route
+          path="/saisie"
+          element={
+            <Access path="/saisie">
+              <Placeholder title="Saisie catalogue" phase="Phase 1" />
+            </Access>
+          }
+        />
         <Route path="/profil" element={<Profile />} />
         <Route path="/guide" element={<Guide />} />
         <Route index element={<Navigate to="/catalogue" replace />} />

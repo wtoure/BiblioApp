@@ -28,8 +28,8 @@
 ## Phase 2 — Profil & rôles
 - [x] Page « Mon profil » (infos, photo, déconnexion) — lecture seule ; édition (écriture) à faire avec relecture
 - [x] Guide d'utilisation (capacités personnalisées par rôle, porté de _userCapabilities)
-- [ ] Gardes fines par rôle sur chaque route (member/resident/enrol/validator/commission/admin)
-- [ ] Réalignement de la barre du bas et du menu « Plus » selon le rôle exact (cf. `bNav`/`bBottomNav`)
+- [x] Gardes fines par rôle sur chaque route (canAccess + composant Access, fidèle à showCom/showLoans/showAdm/showStat/showCA)
+- [x] Réalignement de la barre du bas et du menu « Plus » selon le rôle exact (bottomNavItems mirroir de bNav)
 
 ## Phase 3 — Demandes (commission/membre/résident)
 - [ ] Liste des demandes + filtres par statut
@@ -63,4 +63,4 @@
 ---
 
 ### Journal (dernière action)
-- 2026-06-16 — Page « Mon profil » (lecture seule : avatar/photoB64, infos whatsapp/commune/profession/email, déconnexion). Colonnes users vérifiées (photoB64, pas d'anneeArrivee). Build OK. Prochaine : Phase 2 — Guide d'utilisation.
+- 2026-06-16 — PHASE 2 TERMINÉE : Guide personnalisé (capabilities.ts) + gardes par rôle (canAccess + composant Access sur /demandes /emprunts /admin /stats /saisie). Build OK. Prochaine : PHASE 3 — Demandes (lire app.js : rComT, sessions, opProp/clProp, chgSt, delRq, delSess). Écritures → coder mais marquer « à relire ».

@@ -26,3 +26,26 @@ export function bottomNavItems(role: Role, tabs: string[] = []): NavItem[] {
 
   return items.slice(0, 4)
 }
+
+/**
+ * Contrôle d'accès par route, fidèle aux gardes desktop
+ * (showCom / showLoans / showAdm / showStat / showCA).
+ * Les routes communes (catalogue, fiche, profil, guide) sont toujours permises.
+ */
+export function canAccess(path: string, role: Role, tabs: string[] = []): boolean {
+  const has = (k: string) => role === 'admin' || tabs.includes(k)
+  switch (path) {
+    case '/demandes':
+      return role === 'commission' || role === 'admin' || role === 'resident'
+    case '/emprunts':
+      return role === 'admin' || role === 'validator' || has('loans_validator')
+    case '/admin':
+      return role === 'admin' || has('members') || has('stats')
+    case '/stats':
+      return role === 'admin' || role === 'commission' || has('stats')
+    case '/saisie':
+      return role === 'enrol' || role === 'admin'
+    default:
+      return true
+  }
+}
