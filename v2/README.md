@@ -57,9 +57,11 @@ Connexion, catalogue (1800+), recherche/filtres, fiche, vue publique, **édition
 **proposer un livre**, guide, **installation sur écran d'accueil**. Commission/admin : validations.
 
 ### Reste à porter (back-office — l'app desktop reste utilisée pour ça)
-- [ ] Demander un emprunt (côté emprunteur) + ouvrir/fermer/supprimer une session
 - [ ] Valider une inscription → création de compte (abbrev + nxU)
 - [ ] Saisie/import de livres (enrôleur, nxB), étagères, paramètres d'espace
 - [ ] Realtime (actuellement : rafraîchissement par cache TanStack Query)
+
+> ✅ Portés ce passage : demande d'emprunt (fiche livre, résident auto-validé / membre en attente)
+> et gestion des sessions (ouvrir/fermer/supprimer) côté commission.
 
 > ⚠️ Toutes les **écritures** (validations, édition profil, proposition) sont **fonctionnelles mais à relire/tester** avant usage réel.

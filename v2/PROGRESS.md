@@ -34,12 +34,12 @@
 ## Phase 3 — Demandes (commission/membre/résident)
 - [x] Liste des demandes + filtres par statut + stats
 - [x] Créer une demande (membre/résident/commission) — page /proposer (nextId nxR, session ouverte requise) — écriture LIVE à relire
-- [x] Sessions de demandes (liste lecture : statut, motif, compteur)
+- [x] Sessions de demandes (gestion complète : ouvrir/fermer/supprimer) — ÉCRITURE LIVE (cf. opPropCom/clPropCom/delSess) — À RELIRE
 - [x] Validation/rejet (commission) — ÉCRITURE LIVE (changeStatus → book_requests) — À RELIRE avant prod
-- [ ] Suppression de session (cf. `delSess`) — à compléter (écriture, à relire)
+- [x] Suppression de session (delSess : session + demandes liées + refermeture config si courante)
 
 ## Phase 4 — Emprunts
-- [ ] Demande d'emprunt (résident/membre autorisé) — à compléter (flux côté emprunteur)
+- [x] Demande d'emprunt (résident auto-validé / membre autorisé en attente) — ÉCRITURE LIVE (cf. confirmLoan + canUserLoan) — À RELIRE. Carte « Emprunter » dans la fiche livre.
 - [x] Validation / retour / rejet (validator/admin) — ÉCRITURE LIVE (setStatus → loans) — À RELIRE
 - [x] Statuts de prêt (onglets À valider / En cours / Retours / Historique)
 
@@ -80,6 +80,13 @@ Ajoutés ce passage : guide d'installation PWA (iOS/Android, /installer + menu P
 compteurs (nextId), config hook, profil ÉDITABLE, « Proposer un livre » (/proposer).
 → Les utilisateurs courants peuvent utiliser l'app ; le back-office lourd (création de
 compte, import livres, sessions, étagères, paramètres) reste sur le desktop pour l'instant.
+
+### Correctifs (2026-06-16, 2e passage)
+- **BUG connexion** : v2 cherchait l'abbrev sans normaliser la casse (`.eq('abbrev', code.trim())`).
+  Le desktop fait `value.trim().toLowerCase()` ; les abbrevs sont stockés en minuscules et les
+  claviers mobiles capitalisent la 1re lettre → « Code de connexion inconnu » en local.
+  Corrigé dans `auth.tsx` (findUserByCode → `.toLowerCase()`).
+- **Demande d'emprunt** portée (fiche livre) + **gestion des sessions** (ouvrir/fermer/supprimer) — écritures LIVE à relire.
 
 ### Journal (dernière action)
 - 2026-06-16 — Migration menée jusqu'à Phase 5 + bilan Phase 6/7 en un seul passage (à la demande de l'utilisateur).
