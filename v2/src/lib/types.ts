@@ -30,6 +30,13 @@ export interface Book {
   status: 'available' | 'borrowed' | 'retired' | 'missing'
   resume?: string
   editeur?: string
+  version?: number
+  updatedAt?: string | null
+  updatedBy?: string | null
+  lastModifiedBy?: string | null
+  lastModifiedAt?: string | null
+  lastModifiedRole?: string | null
+  addedAt?: string
 }
 
 export interface User {
@@ -49,6 +56,7 @@ export interface User {
   commune?: string | null
   profession?: string | null
   email?: string | null
+  assignedShelves?: string[]
 }
 
 export interface SpaceConfig {
@@ -58,8 +66,29 @@ export interface SpaceConfig {
   propMotif?: string
   currentSessionId?: number | null
   catAccess: Record<Role, CatType[]>
-  contact?: string
-  contactName?: string
+  contact?: string | null
+  contactName?: string | null
+  meetingPlace?: string | null
+  meetingTime?: string | null
+  countryCode?: string | null
+  shortLink?: string | null
+  loanOpen?: boolean
+}
+
+export interface ShelfCheck {
+  id: number
+  space_code: string
+  userId: number | null
+  userName: string | null
+  userRole: string | null
+  shelfKey: string
+  salle: string
+  placard: string
+  etagere: string
+  checkedAt: string
+  booksCount: number
+  missingCount: number
+  modifiedCount: number
 }
 
 export interface Space {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/PageHeader'
 import { useBook } from '@/features/catalogue/useBooks'
@@ -85,8 +85,23 @@ export function BookDetail() {
         )}
 
         <LoanCard book={book} />
+        <EditButton bookId={book.id} />
       </div>
     </div>
+  )
+}
+
+function EditButton({ bookId }: { bookId: number }) {
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  if (!user || !['admin', 'enrol'].includes(user.role)) return null
+  return (
+    <button
+      onClick={() => navigate(`/saisie?edit=${bookId}`)}
+      className="mt-3 w-full rounded-xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-600 shadow-card active:opacity-80"
+    >
+      ✏️ Modifier ce livre
+    </button>
   )
 }
 

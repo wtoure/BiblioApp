@@ -6,15 +6,19 @@ import { useUsers, useRequests } from '@/features/requests/useRequests'
 import { useLoans } from '@/features/loans/useLoans'
 import { useBooks } from '@/features/catalogue/useBooks'
 import { useRegistrations } from '@/features/admin/useAdmin'
+import { useShelfChecks } from '@/features/admin/useShelfChecks'
+import { useConfig } from '@/features/config/useConfig'
 import { ROLE_LABEL } from '@/lib/capabilities'
 import { supabase } from '@/lib/supabase'
 import { SPACE_ID } from '@/lib/space'
-import type { Registration, Role, User } from '@/lib/types'
+import type { CatType, Registration, Role, SpaceConfig, User } from '@/lib/types'
 
 const SECTIONS: Section[] = [
   { key: 'users', label: 'Utilisateurs' },
   { key: 'registrations', label: 'Inscriptions' },
-  { key: 'stats', label: 'Statistiques' },
+  { key: 'etageres', label: 'Étagères' },
+  { key: 'parametres', label: 'Paramètres' },
+  { key: 'stats', label: 'Stats' },
 ]
 
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
@@ -53,6 +57,8 @@ export function Admin() {
       <SectionPicker sections={SECTIONS} value={section} onChange={setSection} />
       {section === 'users' && <UsersSection />}
       {section === 'registrations' && <RegistrationsSection />}
+      {section === 'etageres' && <EtageresAdminSection />}
+      {section === 'parametres' && <ParametresSection />}
       {section === 'stats' && <StatsSection />}
     </div>
   )
@@ -321,6 +327,251 @@ function StatsSection() {
           <div className="mt-1 text-sm text-slate-500">{s.label}</div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/* ─── Étagères admin : vue de toutes les étagères + dernier contrôle ─── */
+function EtageresAdminSection() {
+  const { data: books } = useBooks()
+  const { data: checks } = useShelfChecks()
+
+  const shelves = useMemo(() => {
+    const map = new Map<string, { salle: string; placard: string; etagere: string; count: number; missing: number }>()
+    for (const b of books ?? []) {
+      const key = `${b.salle}|${b.placard}|${b.etagere}`
+      if (!map.has(key)) map.set(key, { salle: b.salle, placard: b.placard, etagere: b.etagere, count: 0, missing: 0 })
+      const e = map.get(key)!
+      e.count++
+      if (b.status === 'missing') e.missing++
+    }
+    return [...map.entries()]
+      .map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => `${a.salle}${a.placard}${a.etagere}`.localeCompare(`${b.salle}${b.placard}${b.etagere}`))
+  }, [books])
+
+  const lastCheckMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const c of checks ?? []) {
+      if (!m[c.shelfKey] || c.checkedAt > m[c.shelfKey]) m[c.shelfKey] = c.checkedAt
+    }
+    return m
+  }, [checks])
+
+  if (!shelves.length) {
+    return <p className="py-10 text-center text-slate-400 text-sm">Aucune étagère définie.</p>
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+  const week = new Date(Date.now() - 7 * 86400000).toISOString()
+
+  return (
+    <div className="px-3 py-3 space-y-2 pb-10">
+      {shelves.map(({ key, salle, placard, etagere, count, missing }) => {
+        const last = lastCheckMap[key]
+        const checkedToday = !!last?.startsWith(today)
+        const checkedRecently = !!last && last > week
+        const icon = checkedToday ? '✅' : missing > 0 ? '⚠️' : checkedRecently ? '📚' : '⏳'
+        const lastLabel = last
+          ? new Date(last).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
+          : 'Jamais'
+        return (
+          <div key={key} className={`flex items-center gap-3 rounded-xl border bg-white p-3 shadow-card ${
+            missing > 0 ? 'border-red-200' : 'border-slate-100'
+          }`}>
+            <div className="text-2xl w-8 text-center shrink-0">{icon}</div>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-slate-800 text-sm">{salle} · {placard} · {etagere}</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {count} livre(s)
+                {missing > 0 && <span className="ml-1 text-red-600 font-semibold">· {missing} manquant(s)</span>}
+              </div>
+            </div>
+            <div className="text-xs text-slate-400 shrink-0 text-right">
+              <div>Ctrl.</div>
+              <div>{lastLabel}</div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ─── Paramètres espace ─── */
+const ROLES_WITH_ACCESS: Role[] = ['member', 'resident', 'commission', 'enrol', 'admin']
+const CAT_TYPES: { key: CatType; label: string }[] = [
+  { key: 'academique', label: '📚 Académique' },
+  { key: 'spirituel', label: '✝️ Spirituel' },
+]
+
+function ParametresSection() {
+  const qc = useQueryClient()
+  const { data: cfg, isLoading } = useConfig()
+  const [form, setForm] = useState<Partial<SpaceConfig>>({})
+  const [catAccess, setCatAccess] = useState<Record<Role, CatType[]> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+
+  // Initialiser le formulaire quand cfg charge
+  const effective = { ...cfg, ...form }
+  const effectiveCatAccess: Record<Role, CatType[]> =
+    catAccess ?? (cfg?.catAccess as Record<Role, CatType[]> | undefined) ?? ({} as Record<Role, CatType[]>)
+
+  function setField(field: keyof SpaceConfig) {
+    return (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((prev) => ({ ...prev, [field]: e.target.value }))
+  }
+
+  function toggleCat(role: Role, cat: CatType) {
+    setCatAccess((prev) => {
+      const base = prev ?? (cfg?.catAccess as Record<Role, CatType[]> | undefined) ?? ({} as Record<Role, CatType[]>)
+      const current = base[role] ?? []
+      const next = current.includes(cat) ? current.filter((c) => c !== cat) : [...current, cat]
+      return { ...base, [role]: next }
+    })
+  }
+
+  async function save() {
+    setBusy(true)
+    setDone(false)
+    const patch: Record<string, unknown> = {
+      contact: effective.contact ?? null,
+      contactName: effective.contactName ?? null,
+      meetingPlace: effective.meetingPlace ?? null,
+      meetingTime: effective.meetingTime ?? null,
+      countryCode: effective.countryCode ?? '+225',
+      shortLink: effective.shortLink ?? null,
+      loanOpen: effective.loanOpen ?? false,
+      catAccess: effectiveCatAccess,
+    }
+    const { error } = await supabase
+      .from('space_config')
+      .update(patch)
+      .eq('space_code', SPACE_ID)
+    if (error) {
+      alert('Erreur : ' + error.message)
+    } else {
+      qc.invalidateQueries({ queryKey: ['config', SPACE_ID] })
+      setDone(true)
+    }
+    setBusy(false)
+  }
+
+  if (isLoading) return <p className="py-10 text-center text-slate-400">Chargement…</p>
+
+  return (
+    <div className="px-4 py-4 space-y-4 pb-12">
+      {done && (
+        <div className="rounded-xl bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+          ✅ Paramètres enregistrés.
+        </div>
+      )}
+
+      {/* Contact */}
+      <div className="rounded-2xl bg-white p-4 shadow-card space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">Contact</h3>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Nom du contact</span>
+          <input value={effective.contactName ?? ''} onChange={setField('contactName')}
+            className="field-input" placeholder="ex. Jean Kouadio" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Téléphone</span>
+          <input value={effective.contact ?? ''} onChange={setField('contact')}
+            className="field-input" placeholder="ex. +22507XXXXXXXX" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Indicatif pays</span>
+          <input value={effective.countryCode ?? '+225'} onChange={setField('countryCode')}
+            className="field-input" placeholder="+225" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Lien court (partage)</span>
+          <input value={effective.shortLink ?? ''} onChange={setField('shortLink')}
+            className="field-input" placeholder="ex. comoe.link/biblio" />
+        </label>
+      </div>
+
+      {/* Réunion */}
+      <div className="rounded-2xl bg-white p-4 shadow-card space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">Réunion</h3>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Lieu</span>
+          <input value={effective.meetingPlace ?? ''} onChange={setField('meetingPlace')}
+            className="field-input" placeholder="ex. Salle polyvalente" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">Horaire</span>
+          <input value={effective.meetingTime ?? ''} onChange={setField('meetingTime')}
+            className="field-input" placeholder="ex. Sam. 9h-11h" />
+        </label>
+      </div>
+
+      {/* Prêts ouverts */}
+      <div className="rounded-2xl bg-white p-4 shadow-card">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-3">Prêts</h3>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={effective.loanOpen ?? false}
+              onChange={(e) => setForm((prev) => ({ ...prev, loanOpen: e.target.checked }))}
+              className="sr-only"
+            />
+            <div className={`w-11 h-6 rounded-full transition-colors ${effective.loanOpen ? 'bg-navy' : 'bg-slate-200'}`} />
+            <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${effective.loanOpen ? 'translate-x-5' : ''}`} />
+          </div>
+          <span className="text-sm font-medium text-slate-700">Prêts ouverts (membres peuvent emprunter)</span>
+        </label>
+      </div>
+
+      {/* Accès catalogue par rôle */}
+      <div className="rounded-2xl bg-white p-4 shadow-card">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-3">Accès catalogue par rôle</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th className="pb-2 text-left text-xs font-medium text-slate-400 w-24">Rôle</th>
+                {CAT_TYPES.map((ct) => (
+                  <th key={ct.key} className="pb-2 text-center text-xs font-medium text-slate-400">{ct.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {ROLES_WITH_ACCESS.map((role) => (
+                <tr key={role}>
+                  <td className="py-2 text-slate-700 font-medium">{ROLE_LABEL[role] ?? role}</td>
+                  {CAT_TYPES.map((ct) => {
+                    const hasAccess = (effectiveCatAccess[role] ?? []).includes(ct.key)
+                    return (
+                      <td key={ct.key} className="py-2 text-center">
+                        <button
+                          onClick={() => toggleCat(role, ct.key)}
+                          className={`w-6 h-6 rounded-md text-sm font-bold transition-colors ${
+                            hasAccess ? 'bg-navy text-white' : 'bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {hasAccess ? '✓' : '○'}
+                        </button>
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <button
+        onClick={save}
+        disabled={busy}
+        className="w-full rounded-xl bg-comoe py-3.5 font-semibold text-white shadow-soft disabled:opacity-60"
+      >
+        {busy ? 'Enregistrement…' : '💾 Enregistrer les paramètres'}
+      </button>
     </div>
   )
 }

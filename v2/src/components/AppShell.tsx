@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { BottomNav } from './BottomNav'
 import { MoreSheet } from './MoreSheet'
+import { useRealtime } from '@/lib/realtime'
 
 /** Disposition principale : contenu défilant + barre du bas + feuille "Plus". */
 export function AppShell() {
   const [moreOpen, setMoreOpen] = useState(false)
+  useRealtime()
 
   return (
     <div className="min-h-screen">
