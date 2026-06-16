@@ -4,73 +4,132 @@ import { SPACE_ID } from './space'
 import { logLogin } from './loginLog'
 import type { User } from './types'
 
-const SESSION_KEY = 'cb2_session'
+const PERMANENT_ROLES = ['admin', 'resident', 'commission']
 
 interface AuthState {
   user: User | null
   loading: boolean
-  login: (code: string) => Promise<User>
-  logout: () => void
+  /** Connexion email + mot de passe (Supabase Auth). */
+  login: (email: string, password: string) => Promise<User>
+  logout: () => Promise<void>
   updateUser: (patch: Partial<User>) => void
+  /** Recharge la ligne `users` depuis la session auth courante (post set-password). */
+  refresh: () => Promise<User | null>
+  /** Envoie un email de réinitialisation de mot de passe. */
+  requestPasswordReset: (email: string) => Promise<void>
+  /** Définit un nouveau mot de passe (session de récupération/invitation active). */
+  updatePassword: (password: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
 
+/** Traduit les messages d'erreur Supabase Auth en français lisible. */
+function authMessage(raw: string): string {
+  const m = raw.toLowerCase()
+  if (m.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.'
+  if (m.includes('email not confirmed')) return "Email non confirmé. Vérifiez votre boîte mail."
+  if (m.includes('rate limit') || m.includes('too many')) return 'Trop de tentatives. Réessayez dans quelques minutes.'
+  return raw
+}
+
 /**
- * Recherche un utilisateur par code de connexion (abbrev) dans l'espace courant.
- * Le code est normalisé en minuscules (comme le desktop, app.js `value.trim().toLowerCase()`) :
- * les abbrevs sont stockés en minuscules et les claviers mobiles capitalisent souvent
- * la première lettre — sans cette normalisation, la connexion échoue (« Code de connexion inconnu »).
+ * Résout la ligne `users` de l'espace courant rattachée à la session auth active.
+ * Recherche d'abord par auth_id ; repli par email (transition / lignes non liées),
+ * avec liaison best-effort de auth_id au passage.
  */
-async function findUserByCode(code: string): Promise<User | null> {
-  const { data, error } = await supabase
+async function resolveAppUser(): Promise<User | null> {
+  const { data: auth } = await supabase.auth.getUser()
+  const authUser = auth?.user
+  if (!authUser) return null
+
+  const byId = await supabase
     .from('users')
     .select('*')
     .eq('space_code', SPACE_ID)
-    .eq('abbrev', code.trim().toLowerCase())
+    .eq('auth_id', authUser.id)
     .limit(1)
-  if (error) throw new Error(error.message)
-  return (data?.[0] as User) ?? null
+  if (byId.data?.[0]) return byId.data[0] as User
+
+  if (authUser.email) {
+    const byEmail = await supabase
+      .from('users')
+      .select('*')
+      .eq('space_code', SPACE_ID)
+      .ilike('email', authUser.email)
+      .limit(1)
+    const u = byEmail.data?.[0] as User | undefined
+    if (u) {
+      if (!u.auth_id) {
+        // Liaison best-effort (ne bloque pas la connexion en cas d'échec RLS).
+        void supabase.from('users').update({ auth_id: authUser.id }).eq('id', u.id).eq('space_code', SPACE_ID)
+      }
+      return u
+    }
+  }
+  return null
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Restauration de session au démarrage
+  // Restauration de session au démarrage + écoute des déconnexions.
   useEffect(() => {
-    const raw = localStorage.getItem(SESSION_KEY)
-    if (!raw) {
+    let mounted = true
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return
+      if (!session) {
+        setLoading(false)
+        return
+      }
+      const u = await resolveAppUser()
+      if (!mounted) return
+      if (u && !u.disabled) setUser(u)
       setLoading(false)
-      return
-    }
-    try {
-      const { abbrev } = JSON.parse(raw)
-      findUserByCode(abbrev)
-        .then((u) => {
-          if (u && !u.disabled) setUser(u)
-          else localStorage.removeItem(SESSION_KEY)
-        })
-        .catch(() => localStorage.removeItem(SESSION_KEY))
-        .finally(() => setLoading(false))
-    } catch {
-      localStorage.removeItem(SESSION_KEY)
-      setLoading(false)
+    })
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) setUser(null)
+    })
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
     }
   }, [])
 
-  async function login(code: string): Promise<User> {
-    const u = await findUserByCode(code)
-    if (!u) throw new Error('Code de connexion inconnu.')
-    if (u.disabled) throw new Error('Ce compte est désactivé.')
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ id: u.id, abbrev: u.abbrev }))
+  async function login(email: string, password: string): Promise<User> {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+    if (error) throw new Error(authMessage(error.message))
+
+    const u = await resolveAppUser()
+    if (!u) {
+      await supabase.auth.signOut()
+      throw new Error('Aucun compte membre rattaché à cet email dans cette bibliothèque.')
+    }
+    if (u.disabled) {
+      await supabase.auth.signOut()
+      throw new Error('Ce compte est désactivé. Contactez l’administrateur.')
+    }
+    // Expiration (miroir du desktop) — admin/resident/commission ne périment pas.
+    const today = new Date().toISOString().split('T')[0]
+    if (u.expiresAt && u.expiresAt < today && !u.neverExpires && !PERMANENT_ROLES.includes(u.role)) {
+      await supabase.from('users').update({ disabled: true }).eq('id', u.id).eq('space_code', SPACE_ID)
+      await supabase.auth.signOut()
+      throw new Error('Votre compte a expiré le ' + u.expiresAt + '. Contactez l’administrateur.')
+    }
+
     setUser(u)
     void logLogin(u) // journalisation best-effort, non bloquante
     return u
   }
 
-  function logout() {
-    localStorage.removeItem(SESSION_KEY)
+  async function logout() {
+    await supabase.auth.signOut()
     setUser(null)
   }
 
@@ -78,8 +137,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((u) => (u ? { ...u, ...patch } : u))
   }
 
+  async function refresh(): Promise<User | null> {
+    const u = await resolveAppUser()
+    if (u && !u.disabled) setUser(u)
+    return u
+  }
+
+  async function requestPasswordReset(email: string): Promise<void> {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: window.location.origin + '/set-password',
+    })
+    if (error) throw new Error(authMessage(error.message))
+  }
+
+  async function updatePassword(password: string): Promise<void> {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw new Error(authMessage(error.message))
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, logout, updateUser, refresh, requestPasswordReset, updatePassword }}
+    >
       {children}
     </AuthContext.Provider>
   )

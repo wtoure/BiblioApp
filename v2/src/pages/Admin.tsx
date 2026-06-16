@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/auth'
 import { ROLE_LABEL } from '@/lib/capabilities'
 import { supabase } from '@/lib/supabase'
 import { SPACE_ID } from '@/lib/space'
+import { inviteMember } from '@/lib/invite'
 import type { CatType, Registration, Role, SpaceConfig, User } from '@/lib/types'
 
 // Rôles assignables à l'édition (inclut admin, contrairement à la validation d'inscription).
@@ -191,8 +192,11 @@ function UserEditModal({
   const [tabs, setTabs] = useState<string[]>(user.tabs ?? [])
   const [neverExpires, setNeverExpires] = useState(PERMANENT_ROLES.includes(user.role) || !!user.neverExpires)
   const [expiresAt, setExpiresAt] = useState<string>(user.expiresAt ?? '')
+  const [email, setEmail] = useState(user.email ?? '')
   const [err, setErr] = useState('')
+  const [okMsg, setOkMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const hasAuth = !!user.auth_id
 
   const isPermanent = PERMANENT_ROLES.includes(role)
   const adminCount = allUsers.filter((u) => u.role === 'admin').length
@@ -229,6 +233,7 @@ function UserEditModal({
       tabs: role === 'admin' ? [] : tabs,
       neverExpires: isPermanent || neverExpires,
       expiresAt: isPermanent || neverExpires ? null : expiresAt || null,
+      email: email.trim().toLowerCase() || null,
     }
     const { error } = await supabase.from('users').update(patch).eq('id', user.id).eq('space_code', SPACE_ID)
     setBusy(false)
@@ -285,6 +290,36 @@ function UserEditModal({
     }
   }
 
+  // (Ré)envoyer l'invitation : enregistre l'e-mail puis appelle l'Edge Function.
+  async function sendInvite() {
+    const em = email.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) {
+      setErr('Saisissez un e-mail valide avant d’inviter.')
+      return
+    }
+    setBusy(true)
+    setErr('')
+    setOkMsg('')
+    try {
+      const { error } = await supabase.from('users').update({ email: em }).eq('id', user.id).eq('space_code', SPACE_ID)
+      if (error) throw new Error(error.message)
+      const res = await inviteMember(user.id, em)
+      if (!res.ok) {
+        setErr('Invitation : ' + res.error)
+      } else {
+        setOkMsg(
+          res.alreadyExisted
+            ? '✅ Compte existant relié — e-mail de réinitialisation envoyé.'
+            : '✅ Invitation envoyée à ' + em,
+        )
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div
       onClick={(e) => e.target === e.currentTarget && onClose()}
@@ -299,6 +334,23 @@ function UserEditModal({
           <ModalField label="Prénom *" value={prenom} onChange={setPrenom} />
           <ModalField label="Nom *" value={nom} onChange={setNom} />
           <ModalField label="Code de connexion *" value={abbrev} onChange={setAbbrev} />
+
+          <div className="rounded-xl border border-slate-100 p-3">
+            <ModalField label="E-mail (connexion)" value={email} onChange={setEmail} />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className={`text-xs font-medium ${hasAuth ? 'text-green-600' : 'text-amber-600'}`}>
+                {hasAuth ? '● Compte activé' : '○ Pas encore invité'}
+              </span>
+              <button
+                type="button"
+                onClick={sendInvite}
+                disabled={busy}
+                className="rounded-lg bg-comoe/10 px-3 py-1.5 text-xs font-semibold text-comoe disabled:opacity-50"
+              >
+                {hasAuth ? '✉️ Renvoyer l’invitation' : '✉️ Inviter'}
+              </button>
+            </div>
+          </div>
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-slate-500">Rôle</span>
@@ -356,6 +408,7 @@ function UserEditModal({
           )}
 
           {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{err}</p>}
+          {okMsg && <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{okMsg}</p>}
         </div>
         <div className="flex gap-2 px-5 pb-5">
           <button
@@ -438,9 +491,15 @@ function RegistrationsSection() {
   async function approve(r: Registration) {
     const role = getRoleFor(r.id)
     const abbrev = genAbbrev(r.prenom, r.nom, users ?? [])
+    const email = (r.email || '').trim().toLowerCase()
+    if (!email) {
+      alert(
+        `Cette demande n'a pas d'e-mail. L'e-mail est désormais nécessaire pour créer le compte (connexion par e-mail + mot de passe).\n\nLe compte sera créé, mais vous devrez saisir son e-mail dans « Membres » puis cliquer « Inviter ».`,
+      )
+    }
     if (
       !window.confirm(
-        `Créer le compte de ${r.prenom} ${r.nom} ?\n\nRôle : ${ROLE_LABEL[role] ?? role}\nCode de connexion : ${abbrev}\n\nLe membre utilisera ce code pour se connecter.`,
+        `Créer le compte de ${r.prenom} ${r.nom} ?\n\nRôle : ${ROLE_LABEL[role] ?? role}\nCode : ${abbrev}\n${email ? `Une invitation sera envoyée à ${email} pour définir le mot de passe.` : '⚠️ Sans e-mail, le membre ne pourra pas se connecter tant qu\'il ne sera pas invité.'}`,
       )
     )
       return
@@ -480,7 +539,7 @@ function RegistrationsSection() {
         whatsapp: r.whatsapp || '',
         commune: r.commune || '',
         profession: r.profession || '',
-        email: r.email || '',
+        email: email || null,
         tabs: [],
         createdAt: new Date().toISOString(),
       }
@@ -498,7 +557,22 @@ function RegistrationsSection() {
 
       qc.invalidateQueries({ queryKey: ['registrations', SPACE_ID] })
       qc.invalidateQueries({ queryKey: ['users', SPACE_ID] })
-      alert(`✅ Compte créé !\n\n${r.prenom} ${r.nom}\nRôle : ${ROLE_LABEL[role] ?? role}\nCode de connexion : ${abbrev}`)
+
+      // 4. Inviter le compte d'authentification (email d'invitation → set-password)
+      if (email) {
+        const res = await inviteMember(newId, email)
+        if (res.ok) {
+          alert(
+            `✅ Compte créé et invitation envoyée !\n\n${r.prenom} ${r.nom}\nCode : ${abbrev}\nE-mail : ${email}\n\nLe membre reçoit un lien pour définir son mot de passe.`,
+          )
+        } else {
+          alert(
+            `✅ Compte créé (code : ${abbrev}), mais l'invitation a échoué :\n${res.error}\n\nVous pourrez réessayer via « Inviter » dans la fiche du membre.`,
+          )
+        }
+      } else {
+        alert(`✅ Compte créé (code : ${abbrev}).\n\n⚠️ Sans e-mail : saisissez son e-mail dans « Membres » puis cliquez « Inviter ».`)
+      }
     } catch (e) {
       alert('❌ Erreur : ' + (e instanceof Error ? e.message : String(e)) + '\n\nAucun compte n\'a été créé.')
     } finally {

@@ -42,6 +42,7 @@ export interface Book {
 export interface User {
   id: number
   space_code: string
+  auth_id?: string | null
   abbrev: string
   prenom: string
   nom: string

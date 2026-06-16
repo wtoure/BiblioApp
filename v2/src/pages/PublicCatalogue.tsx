@@ -201,8 +201,12 @@ function RegisterModal({
   const [done, setDone] = useState(false)
 
   async function submit() {
-    if (!prenom.trim() || !nom.trim() || !whatsapp.trim() || !commune.trim()) {
+    if (!prenom.trim() || !nom.trim() || !whatsapp.trim() || !commune.trim() || !email.trim()) {
       setErr('Les champs marqués * sont obligatoires.')
+      return
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+      setErr('Veuillez saisir une adresse e-mail valide (elle servira à créer votre compte).')
       return
     }
     setBusy(true)
@@ -216,7 +220,7 @@ function RegisterModal({
         whatsapp: whatsapp.trim(),
         commune: commune.trim(),
         profession: profession.trim(),
-        email: email.trim() || null,
+        email: email.trim().toLowerCase(),
         status: 'pending',
         submittedAt: new Date().toISOString(),
       }
@@ -281,7 +285,10 @@ function RegisterModal({
               <RegField label="Numéro WhatsApp *" value={whatsapp} onChange={setWhatsapp} type="tel" />
               <RegField label="Commune *" value={commune} onChange={setCommune} placeholder="Ex : Cocody" />
               <RegField label="Profession" value={profession} onChange={setProfession} placeholder="Ex : Étudiant" />
-              <RegField label="E-mail (optionnel)" value={email} onChange={setEmail} type="email" />
+              <RegField label="E-mail *" value={email} onChange={setEmail} type="email" placeholder="vous@exemple.com" />
+              <p className="-mt-1 text-xs text-slate-400">
+                Votre e-mail servira à créer votre compte (mot de passe à définir après validation).
+              </p>
               {err && <p className="text-sm text-red-600">{err}</p>}
               {(meetingPlace || meetingTime) && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">

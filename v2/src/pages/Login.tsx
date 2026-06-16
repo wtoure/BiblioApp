@@ -1,21 +1,22 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/lib/auth'
 
 export function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [code, setCode] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!code.trim() || busy) return
+    if (!email.trim() || !password || busy) return
     setBusy(true)
     setError('')
     try {
-      await login(code)
+      await login(email, password)
       navigate('/catalogue', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur de connexion')
@@ -36,22 +37,31 @@ export function Login() {
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-white/70">
-              Code de connexion
-            </label>
+            <label className="mb-1.5 block text-sm font-medium text-white/70">E-mail</label>
             <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               autoCapitalize="none"
               autoCorrect="off"
-              placeholder="Votre code…"
+              autoComplete="email"
+              placeholder="vous@exemple.com"
+              className="w-full rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-white placeholder-white/40 focus:border-comoe-light focus:outline-none focus:ring-2 focus:ring-comoe/40"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-white/70">Mot de passe</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder="••••••••"
               className="w-full rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-white placeholder-white/40 focus:border-comoe-light focus:outline-none focus:ring-2 focus:ring-comoe/40"
             />
           </div>
           {error && (
-            <p className="rounded-lg bg-red-500/15 px-3 py-2 text-center text-sm text-red-200">
-              {error}
-            </p>
+            <p className="rounded-lg bg-red-500/15 px-3 py-2 text-center text-sm text-red-200">{error}</p>
           )}
           <button
             type="submit"
@@ -61,6 +71,11 @@ export function Login() {
             {busy ? 'Connexion…' : 'Se connecter →'}
           </button>
         </form>
+        <div className="mt-4 text-center">
+          <Link to="/forgot-password" className="text-sm text-white/60 underline-offset-2 hover:text-white hover:underline">
+            Mot de passe oublié ?
+          </Link>
+        </div>
       </div>
       <p className="mt-6 text-xs text-white/30">Version mobile · v2</p>
     </div>

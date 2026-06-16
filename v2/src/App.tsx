@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from '@/lib/auth'
 import { canAccess } from '@/lib/nav'
 import { AppShell } from '@/components/AppShell'
 import { Login } from '@/pages/Login'
+import { ForgotPassword } from '@/pages/ForgotPassword'
+import { SetPassword } from '@/pages/SetPassword'
 import { Catalogue } from '@/pages/Catalogue'
 import { BookDetail } from '@/pages/BookDetail'
 import { PublicCatalogue } from '@/pages/PublicCatalogue'
@@ -46,6 +48,8 @@ function Router() {
       <Route path="/book/:code" element={<PublicCatalogue />} />
 
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/set-password" element={<SetPassword />} />
       <Route
         element={
           <RequireAuth>

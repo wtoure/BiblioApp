@@ -63,6 +63,13 @@ let sb = null;
 function _initSb(){
   if(sb)return;
   sb = supabase.createClient(SB_URL, SB_KEY);
+  /* Lien d'invitation / réinitialisation : Supabase établit une session de
+     récupération à partir du fragment d'URL → proposer la définition du mot de passe. */
+  try{
+    sb.auth.onAuthStateChange((event)=>{
+      if(event==='PASSWORD_RECOVERY')openSetPwd();
+    });
+  }catch(_){}
 }
 
 /* ── Mapping noms collections → tables Supabase ── */
@@ -572,44 +579,26 @@ async function loadAllData(){
       return;
     }
 
-    /* ── Restaurer session depuis localStorage ── */
-    const savedSession=localStorage.getItem('cb_session');
-    if(savedSession){
-      showLoading('Restauration de session…');
+    /* ── Lien d'invitation / réinitialisation (?setpw=1) → définir le mot de passe ── */
+    if(new URLSearchParams(window.location.search).get('setpw')==='1'){
+      hideLoading();
       try{
-        let sessionData;
-        try{sessionData=JSON.parse(savedSession);}
-        catch(pe){
-          console.warn('[Session] JSON invalide, suppression');
-          localStorage.removeItem('cb_session');
-          hideLoading();return;
-        }
-        if(!sessionData||!sessionData.id||!sessionData.abbrev){
-          console.warn('[Session] Données incomplètes, suppression');
-          localStorage.removeItem('cb_session');
-          hideLoading();return;
-        }
-        
+        const {data:{session:recSession}}=await sb.auth.getSession();
+        if(recSession){openSetPwd();return;}
+      }catch(_){}
+      /* Pas de session de récupération valide → connexion normale */
+      sv('vl');return;
+    }
 
-        /* Lire le document user directement depuis Supabase */
-        const userDoc=await sbGetDoc('users',sessionData.id);
-        
-
-        /* Vérifier expiration */
+    /* ── Restaurer la session via Supabase Auth ── */
+    try{
+      const {data:{session}}=await sb.auth.getSession();
+      if(session){
+        showLoading('Restauration de session…');
+        const userDoc=await _resolveAppUser();
         const todaySessStr=new Date().toISOString().split('T')[0];
-        if(userDoc&&!userDoc.neverExpires&&userDoc.expiresAt&&userDoc.expiresAt<todaySessStr&&!userDoc.disabled&&userDoc.role!=='admin'&&userDoc.role!=='resident'&&userDoc.role!=='commission'){
-          sbUpd('users',userDoc.id||sessionData.id,{disabled:true}).catch(()=>{});
-          console.warn('[Session] Compte expiré le',userDoc.expiresAt,'— désactivation auto, suppression session');
-          localStorage.removeItem('cb_session');
-          hideLoading();return;
-        }
-
-        /* Vérification : l'abbrev du compte doit correspondre (auth par code, sans mot de passe).
-           NB : le champ `tok` stocké à la connexion n'est pas vérifié côté serveur — l'auth
-           repose entièrement sur la connaissance de l'abbrev. */
-        if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled){
-          /* Session valide — normaliser l'ID */
-          userDoc.id=parseInt(sessionData.id)||sessionData.id;
+        const expired=userDoc&&userDoc.expiresAt&&userDoc.expiresAt<todaySessStr&&!userDoc.neverExpires&&userDoc.role!=='admin'&&userDoc.role!=='resident'&&userDoc.role!=='commission';
+        if(userDoc&&!userDoc.disabled&&!expired){
           curUser=userDoc;
           await loadRestData();
           hideLoading();
@@ -617,7 +606,6 @@ async function loadAllData(){
             const tabs=curUser.tabs||[];
             const lastView=localStorage.getItem('cb_lastview');
             const lastTab=localStorage.getItem('cb_lasttab');
-            /* Restaurer la vue où l'utilisateur était */
             if(lastView==='vadm'&&(curUser.role==='admin'||tabs.length>0)){
               if(curUser.role==='admin')resetAdmTabs();
               showAdm();
@@ -627,28 +615,20 @@ async function loadAllData(){
             }else if(lastView==='vc'){
               showCat();
             }else{
-              /* Pas de vue mémorisée → comportement par défaut */
               if(curUser.role==='admin'){resetAdmTabs();showAdm();_restoreLastTab(lastTab);}
               else showCat();
             }
           }catch(e2){try{sv('vc');sChip('a0','n0');}catch(_){}}
           return;
         } else {
-          /* Abbrev ne correspond plus ou compte désactivé */
-          console.warn('[Session] Abbrev mismatch ou compte désactivé, suppression');
-          localStorage.removeItem('cb_session');
+          if(expired&&userDoc)sbUpd('users',userDoc.id,{disabled:true}).catch(()=>{});
+          await sb.auth.signOut().catch(()=>{});
+          hideLoading();
         }
-      }catch(sesErr){
-        /* Erreur inattendue — conserver la session si c'est un problème réseau */
-        if(sesErr.message.includes('fetch')||sesErr.message.includes('network')||sesErr.message.includes('Failed')){
-          console.warn('[Session] Erreur réseau, session conservée:', sesErr.message);
-        } else {
-          console.warn('[Session] Erreur invalide, suppression:', sesErr.message);
-          localStorage.removeItem('cb_session');
-        }
-      }finally{
-        hideLoading();
       }
+    }catch(sesErr){
+      console.warn('[Session] Erreur restauration:', sesErr.message);
+      hideLoading();
     }
     /* ── Pas de session valide → formulaire de connexion ── */
     sv('vl');
@@ -1328,45 +1308,69 @@ function _rlCheck(key){
 }
 function _rlReset(key){localStorage.removeItem(key);}
 
+/* Traduit les erreurs Supabase Auth en français. */
+function _authMsg(raw){
+  const m=(raw||'').toLowerCase();
+  if(m.includes('invalid login credentials'))return 'E-mail ou mot de passe incorrect.';
+  if(m.includes('email not confirmed'))return 'E-mail non confirmé. Vérifiez votre boîte mail.';
+  if(m.includes('rate')||m.includes('too many'))return 'Trop de tentatives. Réessayez dans quelques minutes.';
+  return raw;
+}
+
+/* Résout la ligne `users` de l'espace courant rattachée à la session auth active.
+   Recherche par auth_id, puis repli par email (avec liaison best-effort). */
+async function _resolveAppUser(){
+  const {data:authData}=await sb.auth.getUser();
+  const au=authData&&authData.user;
+  if(!au)return null;
+  const byId=await sb.from('users').select('*').eq('space_code',SPACE_ID).eq('auth_id',au.id).limit(1);
+  if(byId.data&&byId.data[0]){const u=byId.data[0];u.id=parseInt(u.id)||u.id;return u;}
+  if(au.email){
+    const byEmail=await sb.from('users').select('*').eq('space_code',SPACE_ID).ilike('email',au.email).limit(1);
+    const u=byEmail.data&&byEmail.data[0];
+    if(u){
+      u.id=parseInt(u.id)||u.id;
+      if(!u.auth_id){sb.from('users').update({auth_id:au.id}).eq('id',u.id).eq('space_code',SPACE_ID).then(()=>{},()=>{});}
+      return u;
+    }
+  }
+  return null;
+}
+
 async function doLogin(){
-  const code=document.getElementById('li').value.trim().toLowerCase();
+  const email=(document.getElementById('li-email')?.value||'').trim().toLowerCase();
+  const pwd=document.getElementById('li-pwd')?.value||'';
   const errEl=document.getElementById('le');
   const btn=document.getElementById('login-btn');
   errEl.textContent='';
-  if(!code){errEl.textContent='Veuillez saisir votre code.';return;}
+  if(!email||!pwd){errEl.textContent='Veuillez saisir votre e-mail et votre mot de passe.';return;}
   const wait=_rlCheck('cb_rl_login');
   if(wait>0){errEl.textContent='Trop de tentatives. Réessayez dans '+wait+' secondes.';return;}
   if(btn)btn.disabled=true;
   errEl.textContent='Vérification…';
   try{
-    /* Chercher l'utilisateur par abbrev via Supabase */
     _initSb();
-    const {data:uRows,error:uErr}=await sb.from('users').select('*')
-      .eq('space_code',SPACE_ID).eq('abbrev',code).limit(1);
-    if(uErr){errEl.textContent='Erreur serveur. Réessayez.';return;}
-    const u=uRows?.[0]||null;
-    if(!u){errEl.textContent='Code non reconnu. Contactez l\'administrateur.';return;}
-    u.id=parseInt(u.id)||u.id;
-    if(u.disabled){errEl.textContent='Ce compte est désactivé. Contactez l\'administrateur.';return;}
+    const {error:authErr}=await sb.auth.signInWithPassword({email,password:pwd});
+    if(authErr){errEl.textContent=_authMsg(authErr.message);return;}
+    const u=await _resolveAppUser();
+    if(!u){await sb.auth.signOut();errEl.textContent='Aucun compte membre rattaché à cet e-mail dans cette bibliothèque.';return;}
+    if(u.disabled){await sb.auth.signOut();errEl.textContent='Ce compte est désactivé. Contactez l\'administrateur.';return;}
     /* Vérifier expiration du compte */
     const todayLoginStr=new Date().toISOString().split('T')[0];
     if(u.expiresAt&&u.expiresAt<todayLoginStr&&!u.neverExpires&&u.role!=='admin'&&u.role!=='resident'&&u.role!=='commission'){
       sbUpd('users',u.id,{disabled:true}).catch(()=>{});
+      await sb.auth.signOut();
       errEl.textContent='Votre compte a expiré le '+u.expiresAt+'. Contactez l\'administrateur.';
       return;
     }
-    /* Connexion réussie */
+    /* Connexion réussie — la session est gérée par Supabase Auth (localStorage). */
     _rlReset('cb_rl_login');
     curUser=u;
     errEl.textContent='';
-    document.getElementById('li').value='';
-    /* Ajouter un token de session pour durcir contre la manipulation du localStorage */
-      const sessionToken=(()=>{const b=new Uint8Array(16);crypto.getRandomValues(b);return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('');})();
-      const sessionPayload={id:u.id,abbrev:u.abbrev,tok:sessionToken,ts:Date.now()};
-      localStorage.setItem('cb_session',JSON.stringify(sessionPayload));
+    if(document.getElementById('li-email'))document.getElementById('li-email').value='';
+    if(document.getElementById('li-pwd'))document.getElementById('li-pwd').value='';
     /* Charger les données puis naviguer */
     await loadRestData();
-    /* Garantir que l'utilisateur connecté est dans le tableau local (cache peut être obsolète) */
     if(!users.find(x=>String(x.id)===String(curUser.id))){
       users.push(curUser);
       _cachePut({users});
@@ -1389,8 +1393,124 @@ async function doLogin(){
     if(btn)btn.disabled=false;
   }
 }
-document.getElementById('li').addEventListener('keypress',e=>{if(e.key==='Enter')doLogin();});
-function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;_admLoginLogLoaded=false;loginLog=[];localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
+['li-email','li-pwd'].forEach(idd=>{const el=document.getElementById(idd);if(el)el.addEventListener('keypress',e=>{if(e.key==='Enter')doLogin();});});
+
+/* ── Mot de passe oublié : envoie un email de réinitialisation ── */
+async function openForgotPwd(){
+  _initSb();
+  const email=prompt('Entrez votre e-mail pour recevoir un lien de réinitialisation :','');
+  if(email===null)return;
+  const em=email.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert('E-mail invalide.');return;}
+  try{
+    const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname+'?setpw=1'});
+    if(error)throw new Error(error.message);
+    alert('Si un compte existe pour cet e-mail, un lien de réinitialisation vient d\'être envoyé. Vérifiez votre boîte mail (et les spams).');
+  }catch(e){alert('Erreur : '+_authMsg(e.message));}
+}
+
+/* ── Définir / réinitialiser le mot de passe (session de récupération active) ── */
+function openSetPwd(){
+  const old=document.getElementById('_setpwd_modal');if(old)old.remove();
+  const ov=document.createElement('div');
+  ov.id='_setpwd_modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=html`<div style="background:white;border-radius:16px;width:100%;max-width:400px;box-shadow:0 24px 64px rgba(0,0,0,.25)">
+    <div style="background:#1c4370;color:white;padding:22px 20px;border-radius:16px 16px 0 0;font-size:18px;font-weight:700">🔑 Définir mon mot de passe</div>
+    <div style="padding:20px">
+      <p style="font-size:13px;color:#475569;margin-bottom:14px">Choisissez un mot de passe (8 caractères minimum).</p>
+      <div class="fg"><label class="ld">Nouveau mot de passe</label><input class="fi" type="password" id="setpwd-1" autocomplete="new-password"/></div>
+      <div class="fg"><label class="ld">Confirmer</label><input class="fi" type="password" id="setpwd-2" autocomplete="new-password"/></div>
+      <p id="setpwd-err" style="color:#dc2626;font-size:13px;min-height:16px"></p>
+      <button type="button" id="setpwd-btn" onclick="submitSetPwd()" style="width:100%;padding:12px;border:none;background:#1c4370;color:white;border-radius:10px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">Valider</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+async function submitSetPwd(){
+  const p1=document.getElementById('setpwd-1')?.value||'';
+  const p2=document.getElementById('setpwd-2')?.value||'';
+  const err=document.getElementById('setpwd-err');
+  const btn=document.getElementById('setpwd-btn');
+  if(err)err.textContent='';
+  if(p1.length<8){if(err)err.textContent='Le mot de passe doit contenir au moins 8 caractères.';return;}
+  if(p1!==p2){if(err)err.textContent='Les deux mots de passe ne correspondent pas.';return;}
+  if(btn)btn.disabled=true;
+  try{
+    _initSb();
+    const {error}=await sb.auth.updateUser({password:p1});
+    if(error)throw new Error(error.message);
+    /* Nettoyer l'URL (token de récupération) */
+    try{window.history.replaceState({},'',location.pathname);}catch(_){}
+    document.getElementById('_setpwd_modal')?.remove();
+    const u=await _resolveAppUser();
+    if(u&&!u.disabled){
+      curUser=u;await loadRestData();
+      if(u.role==='admin'){resetAdmTabs();showAdm();}else showCat();
+    }else{
+      alert('Mot de passe défini ✅. Vous pouvez maintenant vous connecter.');
+      await sb.auth.signOut().catch(()=>{});
+      sv('vl');
+    }
+  }catch(e){if(err)err.textContent=_authMsg(e.message);if(btn)btn.disabled=false;}
+}
+
+/* ── État du compte auth dans le formulaire membre + bouton Inviter ── */
+function _setUfAuthStatus(hasAuth,showBtn){
+  const st=document.getElementById('uf-auth-status');
+  const btn=document.getElementById('uf-invite-btn');
+  if(st)st.innerHTML=showBtn?(hasAuth?'<span style="color:#16a34a">● Compte activé</span>':'<span style="color:#d97706">○ Pas encore invité</span>'):'';
+  if(btn){btn.style.display=showBtn?'':'none';btn.textContent=hasAuth?'✉️ Renvoyer l’invitation':'✉️ Inviter';}
+}
+/* Invite le membre en cours d'édition (enregistre d'abord son e-mail). */
+async function invManFromForm(){
+  if(!ufEid){alert('Enregistrez d\'abord le compte, puis rouvrez-le pour l\'inviter.');return;}
+  const em=(document.getElementById('ufemail')?.value||'').trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert('Saisissez un e-mail valide avant d\'inviter.');return;}
+  const btn=document.getElementById('uf-invite-btn');
+  if(btn){btn.disabled=true;btn.textContent='Envoi…';}
+  try{
+    await sbUpd('users',ufEid,{email:em});
+    const i=users.findIndex(u=>String(u.id)===String(ufEid));if(i>=0)users[i].email=em;
+    const res=await _inviteMember(ufEid,em);
+    if(res.ok){
+      if(i>=0){users[i].auth_id=users[i].auth_id||'pending';}
+      _setUfAuthStatus(true,true);
+      alert(res.alreadyExisted?'✅ Compte existant relié — e-mail de réinitialisation envoyé à '+em:'✅ Invitation envoyée à '+em);
+    }else{
+      alert('❌ Invitation : '+res.error);
+    }
+  }catch(e){alert('❌ Erreur : '+e.message);}
+  finally{
+    if(btn)btn.disabled=false;
+    const cur=users.find(u=>String(u.id)===String(ufEid));
+    _setUfAuthStatus(!!(cur&&cur.auth_id),true);
+  }
+}
+
+/* ── Inviter un membre (création compte auth via Edge Function invite-user) ── */
+async function _inviteMember(userId,email){
+  _initSb();
+  const em=(email||'').trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em))return{ok:false,error:'E-mail invalide.'};
+  try{
+    const {data,error}=await sb.functions.invoke('invite-user',{body:{
+      space_code:SPACE_ID,user_id:userId,email:em,
+      redirect_to:location.origin+location.pathname+'?setpw=1'
+    }});
+    if(error){
+      const ctx=error.context;let msg=error.message;
+      try{if(ctx&&typeof ctx.json==='function'){const j=await ctx.json();if(j&&j.error)msg=j.error;}}catch(_){}
+      return{ok:false,error:msg};
+    }
+    if(data&&data.error)return{ok:false,error:data.error};
+    if(data&&data.alreadyExisted){
+      await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname+'?setpw=1'}).catch(()=>{});
+    }
+    return{ok:true,invited:!!(data&&data.invited),alreadyExisted:!!(data&&data.alreadyExisted)};
+  }catch(e){return{ok:false,error:e.message};}
+}
+function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;_admLoginLogLoaded=false;loginLog=[];try{_initSb();sb.auth.signOut();}catch(_){}localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
 function showAdm(){
   if(!curUser)return;
   const isAdmin=curUser.role==='admin';
@@ -3284,14 +3404,17 @@ function openUM(id=null){
     document.getElementById('ufpro').value=u.profession||'';
     document.getElementById('ufwa').value=u.whatsapp||'';
     document.getElementById('ufcom').value=u.commune||'';
+    if(document.getElementById('ufemail'))document.getElementById('ufemail').value=u.email||'';
+    _setUfAuthStatus(!!u.auth_id,true);
     ufPhotoB64=u.photoB64||null;
     const prev=document.getElementById('uf-photo-prev');
     if(prev)prev.innerHTML=ufPhotoB64?`<img src="${esc(ufPhotoB64)}" style="width:100%;height:100%;object-fit:cover"/>`:'📷';
   }}
   else{
-    ['ufid','ufpn','ufnm','ufpro','ufwa','ufcom'].forEach(f=>document.getElementById(f).value='');
+    ['ufid','ufpn','ufnm','ufpro','ufwa','ufcom','ufemail'].forEach(f=>{const el=document.getElementById(f);if(el)el.value='';});
     document.getElementById('ufab').value=genCode();
     document.getElementById('ufrl').value='member';document.getElementById('ufcp').checked=false;
+    _setUfAuthStatus(false,false);
     const prev=document.getElementById('uf-photo-prev');if(prev)prev.innerHTML='📷';
   }
   openM('mus');
@@ -3378,8 +3501,10 @@ async function savU(){if(!_requirePrivileged('savU'))return;
         rl=document.getElementById('ufrl').value,cp=document.getElementById('ufcp').checked,
         pro=document.getElementById('ufpro').value.trim(),
         wa=document.getElementById('ufwa').value.trim(),
-        com=document.getElementById('ufcom').value.trim();
+        com=document.getElementById('ufcom').value.trim(),
+        em=(document.getElementById('ufemail')?.value||'').trim().toLowerCase();
   if(!ab||!pn||!nm){document.getElementById('ufe').textContent='Tous les champs * sont obligatoires.';return;}
+  if(em&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){document.getElementById('ufe').textContent='E-mail invalide.';return;}
   /* Vérif unicité code — d'abord en mémoire, puis Supabase pour les nouveaux */
   const abConflict=users.find(u=>u.abbrev===ab&&u.id!==ufEid);
   if(abConflict){
@@ -3410,7 +3535,7 @@ async function savU(){if(!_requirePrivileged('savU'))return;
   /* Collecter les droits onglets admin */
   const tabKeys=['loans_validator','stats','members','shelf_mgr'];
   const adminTabs=tabKeys.filter(k=>{const el=document.getElementById('uf-tab-'+k);return el?.checked;});
-  const extras={profession:pro,whatsapp:wa,commune:com,photoB64:ufPhotoB64||null,canLoan:canLoanEl?.checked||false,tabs:adminTabs};
+  const extras={profession:pro,whatsapp:wa,commune:com,email:em||null,photoB64:ufPhotoB64||null,canLoan:canLoanEl?.checked||false,tabs:adminTabs};
   if(ufEid){
     const existing=users.find(u=>u.id==ufEid);
     if(existing&&existing.role==='admin'&&rl!=='admin'&&countAdmins()<=1){document.getElementById('ufe').textContent='⚠️ Seul administrateur.';return;}
@@ -4176,7 +4301,8 @@ function openPubRegister(){
       </div>
       <div class="fg"><label class="ld">Commune <span style="color:#dc2626">*</span></label><input class="fi" id="reg-commune" placeholder="Ex : Cocody"/></div>
       <div class="fg"><label class="ld">Profession</label><input class="fi" id="reg-profession" placeholder="Ex : Étudiant en Math"/></div>
-      <div class="fg"><label class="ld">Email <span style="font-size:11px;color:var(--g400)">(optionnel)</span></label><input class="fi" id="reg-email" type="email"/></div>
+      <div class="fg"><label class="ld">Email <span style="color:#dc2626">*</span></label><input class="fi" id="reg-email" type="email" placeholder="vous@exemple.com" autocomplete="email"/>
+        <p style="font-size:11px;color:var(--g400);margin-top:4px">Servira à créer votre compte (mot de passe à définir après validation).</p></div>
       <p id="reg-err" style="color:#dc2626;font-size:13px;margin-top:8px;min-height:16px"></p>
       ${safe((_pubMeeting&&(_pubMeeting.place||_pubMeeting.time))?`
       <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;margin-top:4px">
@@ -4198,12 +4324,13 @@ async function submitPubRegister(){
   const prenom=val('reg-prenom'),nom=val('reg-nom'),whatsapp=val('reg-whatsapp'),
         commune=val('reg-commune'),profession=val('reg-profession'),email=val('reg-email');
   const err=document.getElementById('reg-err');
-  if(!prenom||!nom||!whatsapp||!commune){err.textContent='Les champs marqués * sont obligatoires.';return;}
+  if(!prenom||!nom||!whatsapp||!commune||!email){err.textContent='Les champs marqués * sont obligatoires.';return;}
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){err.textContent='Veuillez saisir une adresse e-mail valide (elle servira à créer votre compte).';return;}
   const btn=document.getElementById('reg-submit-btn');
   if(btn){btn.disabled=true;btn.textContent='Envoi en cours…';btn.style.opacity='.6';}
   _initSb();
   const regId='reg_'+Date.now();
-  const entry={id:regId,space_code:SPACE_ID,prenom,nom,whatsapp,commune,profession,email,
+  const entry={id:regId,space_code:SPACE_ID,prenom,nom,whatsapp,commune,profession,email:email.toLowerCase(),
     status:'pending',submittedAt:new Date().toISOString()};
   try{
     const {error}=await sb.from('registrations').upsert(entry);
@@ -4942,7 +5069,11 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
   const reg=registrations.find(r=>r.id===id);if(!reg)return;
   const role=document.getElementById('reg-role-'+id)?.value||'member';
   const abbrev=_genAbbrev(reg.prenom,reg.nom);
-  if(!confirm(`Créer le compte de ${reg.prenom} ${reg.nom} ?\n\nRôle : ${role}\nCode de connexion : ${abbrev}\n\nLe membre utilisera ce code pour se connecter.`))return;
+  const regEmail=(reg.email||'').trim().toLowerCase();
+  if(!regEmail){
+    alert('Cette demande n\'a pas d\'e-mail. L\'e-mail est désormais nécessaire pour la connexion. Le compte sera créé, mais vous devrez saisir son e-mail puis l\'inviter depuis la gestion des membres.');
+  }
+  if(!confirm(`Créer le compte de ${reg.prenom} ${reg.nom} ?\n\nRôle : ${role}\nCode : ${abbrev}\n${regEmail?`Une invitation sera envoyée à ${regEmail} pour définir le mot de passe.`:'⚠️ Sans e-mail, le membre ne pourra pas se connecter tant qu\'il ne sera pas invité.'}`))return;
 
   /* 1. Compteur frais depuis Supabase pour éviter collisions entre sessions */
   try{const d=await sbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
@@ -4951,7 +5082,7 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
   const nu={id:newId,abbrev,prenom:reg.prenom,nom:reg.nom,role,
     canPropose:true,canLoan:false,propUntil:null,disabled:false,
     expiresAt:neverExp?null:calcExpiresAt(),neverExpires:neverExp,
-    whatsapp:reg.whatsapp||'',commune:reg.commune||'',profession:reg.profession||'',email:reg.email||'',
+    whatsapp:reg.whatsapp||'',commune:reg.commune||'',profession:reg.profession||'',email:regEmail||null,
     tabs:[],createdAt:new Date().toISOString()};
 
   try{
@@ -4969,7 +5100,17 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
     rAdmRegistrations();
     try{rAdmUs();}catch(e){}
     _showSyncToast('✅ Compte créé — code : '+abbrev);
-    alert(`✅ Compte créé avec succès !\n\n${reg.prenom} ${reg.nom}\nRôle : ${role}\nCode de connexion : ${abbrev}\n\nCommuniquez ce code au membre pour qu'il puisse se connecter.`);
+    /* 6. Inviter le compte d'authentification (email d'invitation → set-password) */
+    if(regEmail){
+      const res=await _inviteMember(newId,regEmail);
+      if(res.ok){
+        alert(`✅ Compte créé et invitation envoyée !\n\n${reg.prenom} ${reg.nom}\nCode : ${abbrev}\nE-mail : ${regEmail}\n\nLe membre reçoit un lien pour définir son mot de passe.`);
+      }else{
+        alert(`✅ Compte créé (code : ${abbrev}), mais l'invitation a échoué :\n${res.error}\n\nVous pourrez réessayer via « Inviter » dans la gestion des membres.`);
+      }
+    }else{
+      alert(`✅ Compte créé (code : ${abbrev}).\n\n⚠️ Sans e-mail : saisissez son e-mail puis cliquez « Inviter » dans la gestion des membres.`);
+    }
   }catch(e){
     console.error('[approveRegistration]',e.message);
     alert('❌ Erreur lors de la création du compte : '+e.message+'\n\nAucun compte n\'a été créé. Réessayez.');
