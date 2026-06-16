@@ -25,6 +25,13 @@ function safe(v){return{__html:true,v:v??''}}
 ════════════════════════════════════════════════════════════ */
 const DEFAULT_SPACE = 'f9a0-60a0-5274';
 
+/* Détection SYNCHRONE du flux invitation / réinitialisation de mot de passe.
+   Supabase place le token dans le fragment (#access_token=…&type=invite|recovery).
+   On lit le hash AVANT que le SDK ne le consomme pour éviter la race condition
+   avec le bloc de restauration de session. */
+const _isRecoveryFlow = /[#&]type=(invite|recovery)/.test(window.location.hash)
+  || new URLSearchParams(window.location.search).get('setpw') === '1';
+
 /* Détection du mode et de l'espace depuis l'URL
    /book/[code]  → catalogue public sans connexion
    /[code]       → app complète avec connexion
@@ -603,14 +610,21 @@ async function loadAllData(){
       return;
     }
 
-    /* ── Lien d'invitation / réinitialisation (?setpw=1) → définir le mot de passe ── */
-    if(new URLSearchParams(window.location.search).get('setpw')==='1'){
+    /* ── Lien d'invitation / réinitialisation → définir le mot de passe ── */
+    if(_isRecoveryFlow){
       hideLoading();
-      try{
-        const {data:{session:recSession}}=await sb.auth.getSession();
-        if(recSession){openSetPwd();return;}
-      }catch(_){}
-      /* Pas de session de récupération valide → connexion normale */
+      /* Laisser onAuthStateChange (PASSWORD_RECOVERY) ouvrir la modale.
+         On attend brièvement pour lui laisser le temps de s'exécuter. */
+      await new Promise(r=>setTimeout(r,300));
+      /* Si la modale n'est pas encore là, on l'ouvre manuellement. */
+      if(!document.getElementById('_setpwd_modal')){
+        try{
+          const {data:{session:recSession}}=await sb.auth.getSession();
+          if(recSession){openSetPwd();return;}
+        }catch(_){}
+      } else {
+        return; /* modale déjà ouverte par onAuthStateChange */
+      }
       sv('vl');return;
     }
 
