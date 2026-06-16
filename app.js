@@ -1578,7 +1578,11 @@ async function invManFromForm(){
     if(res.ok){
       if(i>=0){users[i].auth_id=users[i].auth_id||'pending';}
       _setUfAuthStatus(true,true);
-      alert(res.alreadyExisted?'✅ Compte existant relié — e-mail de réinitialisation envoyé à '+em:'✅ Invitation envoyée à '+em);
+      if(res.emailWarning){
+        alert('⚠️ Compte relié, mais l\'e-mail n\'a PAS pu être envoyé :\n\n'+res.emailWarning+'\n\nLe membre ne recevra pas de lien. Communiquez-lui plutôt un mot de passe temporaire (créé dans Supabase → Authentication → Users) par WhatsApp.');
+      }else{
+        alert(res.alreadyExisted?'✅ Compte existant relié — e-mail de réinitialisation envoyé à '+em:'✅ Invitation envoyée à '+em);
+      }
     }else{
       alert('❌ Invitation : '+res.error);
     }
@@ -1606,10 +1610,18 @@ async function _inviteMember(userId,email){
       return{ok:false,error:msg};
     }
     if(data&&data.error)return{ok:false,error:data.error};
+    let emailWarning=null;
     if(data&&data.alreadyExisted){
-      await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname+'?setpw=1'}).catch(()=>{});
+      const {error:rstErr}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname+'?setpw=1'});
+      if(rstErr){
+        /* 429 = SMTP intégré Supabase saturé (limite de quelques emails/heure).
+           Solution : configurer un SMTP dédié, ou communiquer un mot de passe par WhatsApp. */
+        emailWarning=/rate|429|too many/i.test(rstErr.message)
+          ? 'Limite d\'envoi d\'e-mails atteinte (SMTP Supabase). Réessayez plus tard ou configurez un SMTP dédié.'
+          : _authMsg(rstErr.message);
+      }
     }
-    return{ok:true,invited:!!(data&&data.invited),alreadyExisted:!!(data&&data.alreadyExisted)};
+    return{ok:true,invited:!!(data&&data.invited),alreadyExisted:!!(data&&data.alreadyExisted),emailWarning};
   }catch(e){return{ok:false,error:e.message};}
 }
 function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;_admLoginLogLoaded=false;loginLog=[];try{_initSb();sb.auth.signOut();}catch(_){}localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
