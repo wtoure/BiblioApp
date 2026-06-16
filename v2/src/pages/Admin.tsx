@@ -8,10 +8,31 @@ import { useBooks } from '@/features/catalogue/useBooks'
 import { useRegistrations } from '@/features/admin/useAdmin'
 import { useShelfChecks } from '@/features/admin/useShelfChecks'
 import { useConfig } from '@/features/config/useConfig'
+import { useAuth } from '@/lib/auth'
 import { ROLE_LABEL } from '@/lib/capabilities'
 import { supabase } from '@/lib/supabase'
 import { SPACE_ID } from '@/lib/space'
 import type { CatType, Registration, Role, SpaceConfig, User } from '@/lib/types'
+
+// Rôles assignables à l'édition (inclut admin, contrairement à la validation d'inscription).
+const EDIT_ROLE_OPTIONS: { value: Role; label: string }[] = [
+  { value: 'member', label: 'Membre' },
+  { value: 'resident', label: 'Résident' },
+  { value: 'commission', label: 'Commission' },
+  { value: 'enrol', label: 'Enrôleur' },
+  { value: 'validator', label: 'Validateur' },
+  { value: 'admin', label: 'Administrateur' },
+]
+
+// Onglets/droits délégables (cf. tabKeys desktop) — sans objet pour les admins.
+const TAB_OPTIONS: { key: string; label: string }[] = [
+  { key: 'loans_validator', label: 'Valider les emprunts' },
+  { key: 'stats', label: 'Voir les statistiques' },
+  { key: 'members', label: 'Gérer les membres' },
+  { key: 'shelf_mgr', label: 'Vérifier les étagères' },
+]
+
+const PERMANENT_ROLES: Role[] = ['admin', 'resident', 'commission']
 
 const SECTIONS: Section[] = [
   { key: 'users', label: 'Utilisateurs' },
@@ -68,6 +89,7 @@ function UsersSection() {
   const qc = useQueryClient()
   const { data: users, isLoading } = useUsers()
   const [q, setQ] = useState('')
+  const [editing, setEditing] = useState<User | null>(null)
 
   const list = useMemo(() => {
     let l = [...(users ?? [])].sort((a, b) => a.prenom.localeCompare(b.prenom, 'fr'))
@@ -102,27 +124,297 @@ function UsersSection() {
             className={`rounded-xl border border-slate-100 bg-white p-3 shadow-card ${u.disabled ? 'opacity-60' : ''}`}
           >
             <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
+              <button onClick={() => setEditing(u)} className="min-w-0 flex-1 text-left">
                 <div className="truncate font-semibold text-slate-800">
                   {u.prenom} {u.nom}
                 </div>
                 <div className="text-xs text-slate-400">
                   {ROLE_LABEL[u.role] ?? u.role} · {u.abbrev}
+                  {(u.tabs?.length ?? 0) > 0 && <span className="ml-1 text-navy">· +{u.tabs!.length} droit(s)</span>}
                 </div>
-              </div>
-              <button
-                onClick={() => toggle(u)}
-                className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                  u.disabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}
-              >
-                {u.disabled ? 'Activer' : 'Désactiver'}
               </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  onClick={() => setEditing(u)}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                >
+                  Modifier
+                </button>
+                <button
+                  onClick={() => toggle(u)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    u.disabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}
+                >
+                  {u.disabled ? 'Activer' : 'Désactiver'}
+                </button>
+              </div>
             </div>
           </li>
         ))}
       </ul>
+      {editing && (
+        <UserEditModal
+          user={editing}
+          allUsers={users ?? []}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ['users', SPACE_ID] })
+            setEditing(null)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/* ─── Édition / suppression d'un utilisateur (cf. savU / delU desktop) ─── */
+function UserEditModal({
+  user,
+  allUsers,
+  onClose,
+  onSaved,
+}: {
+  user: User
+  allUsers: User[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { user: curUser } = useAuth()
+  const { data: loans } = useLoans()
+  const [prenom, setPrenom] = useState(user.prenom)
+  const [nom, setNom] = useState(user.nom)
+  const [abbrev, setAbbrev] = useState(user.abbrev)
+  const [role, setRole] = useState<Role>(user.role)
+  const [canPropose, setCanPropose] = useState(user.canPropose !== false)
+  const [canLoan, setCanLoan] = useState(!!user.canLoan)
+  const [tabs, setTabs] = useState<string[]>(user.tabs ?? [])
+  const [neverExpires, setNeverExpires] = useState(PERMANENT_ROLES.includes(user.role) || !!user.neverExpires)
+  const [expiresAt, setExpiresAt] = useState<string>(user.expiresAt ?? '')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const isPermanent = PERMANENT_ROLES.includes(role)
+  const adminCount = allUsers.filter((u) => u.role === 'admin').length
+  const isLastAdmin = user.role === 'admin' && adminCount <= 1
+  const isSelf = curUser?.id === user.id
+
+  function toggleTab(key: string) {
+    setTabs((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }
+
+  async function save() {
+    const ab = abbrev.trim().toLowerCase()
+    if (!prenom.trim() || !nom.trim() || !ab) {
+      setErr('Prénom, nom et code sont obligatoires.')
+      return
+    }
+    if (allUsers.some((u) => u.abbrev === ab && u.id !== user.id)) {
+      setErr(`Le code « ${ab} » est déjà utilisé par un autre membre.`)
+      return
+    }
+    if (isLastAdmin && role !== 'admin') {
+      setErr('Impossible de rétrograder le seul administrateur.')
+      return
+    }
+    setBusy(true)
+    setErr('')
+    const patch: Record<string, unknown> = {
+      prenom: prenom.trim(),
+      nom: nom.trim(),
+      abbrev: ab,
+      role,
+      canPropose,
+      canLoan,
+      tabs: role === 'admin' ? [] : tabs,
+      neverExpires: isPermanent || neverExpires,
+      expiresAt: isPermanent || neverExpires ? null : expiresAt || null,
+    }
+    const { error } = await supabase.from('users').update(patch).eq('id', user.id).eq('space_code', SPACE_ID)
+    setBusy(false)
+    if (error) {
+      setErr(error.message)
+      return
+    }
+    onSaved()
+  }
+
+  async function remove() {
+    if (isSelf) {
+      setErr('Vous ne pouvez pas supprimer votre propre compte.')
+      return
+    }
+    if (isLastAdmin) {
+      setErr('Impossible de supprimer le seul administrateur.')
+      return
+    }
+    const activeLoans = (loans ?? []).filter(
+      (l) => l.userId === user.id && (l.status === 'active' || l.status === 'pending' || l.status === 'pending_return'),
+    )
+    if (activeLoans.length > 0) {
+      setErr(
+        `Ce membre a ${activeLoans.length} emprunt(s) en cours. Clôturez-les (onglet Emprunts) avant de supprimer le compte.`,
+      )
+      return
+    }
+    if (!window.confirm(`Supprimer définitivement « ${user.prenom} ${user.nom} » ?\nCette action est irréversible.`))
+      return
+    setBusy(true)
+    setErr('')
+    try {
+      // Archive dans deleted_users (cf. delU desktop) puis suppression.
+      const archived = {
+        space_code: SPACE_ID,
+        origId: user.id,
+        abbrev: user.abbrev,
+        prenom: user.prenom,
+        nom: user.nom,
+        role: user.role,
+        deletedAt: new Date().toLocaleDateString('fr-FR'),
+        deletedBy: curUser ? `${curUser.prenom} ${curUser.nom}` : '?',
+        snapshot: user,
+      }
+      const { error: aErr } = await supabase.from('deleted_users').insert(archived)
+      if (aErr) throw new Error(aErr.message)
+      const { error: dErr } = await supabase.from('users').delete().eq('id', user.id).eq('space_code', SPACE_ID)
+      if (dErr) throw new Error(dErr.message)
+      onSaved()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center"
+    >
+      <div className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white sm:rounded-2xl">
+        <div className="sticky top-0 flex items-center justify-between rounded-t-2xl bg-navy px-5 py-4 text-white">
+          <div className="font-bold">Modifier le membre</div>
+          <button onClick={onClose} className="text-white/80">✕</button>
+        </div>
+        <div className="space-y-3 px-5 py-4">
+          <ModalField label="Prénom *" value={prenom} onChange={setPrenom} />
+          <ModalField label="Nom *" value={nom} onChange={setNom} />
+          <ModalField label="Code de connexion *" value={abbrev} onChange={setAbbrev} />
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-slate-500">Rôle</span>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              className="field-input"
+            >
+              {EDIT_ROLE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <Toggle label="Peut proposer des livres" checked={canPropose} onChange={setCanPropose} />
+          <Toggle label="Peut emprunter" checked={canLoan} onChange={setCanLoan} />
+
+          {role !== 'admin' && (
+            <div className="rounded-xl border border-slate-100 p-3">
+              <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Droits délégués</div>
+              <div className="space-y-1.5">
+                {TAB_OPTIONS.map((t) => (
+                  <label key={t.key} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={tabs.includes(t.key)}
+                      onChange={() => toggleTab(t.key)}
+                      className="h-4 w-4 rounded border-slate-300 text-navy focus:ring-navy"
+                    />
+                    {t.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!isPermanent && (
+            <div className="rounded-xl border border-slate-100 p-3">
+              <Toggle label="N'expire jamais" checked={neverExpires} onChange={setNeverExpires} />
+              {!neverExpires && (
+                <label className="mt-2 block">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">Expire le</span>
+                  <input
+                    type="date"
+                    value={expiresAt ?? ''}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    className="field-input"
+                  />
+                </label>
+              )}
+            </div>
+          )}
+          {isPermanent && (
+            <p className="text-xs text-slate-400">Les rôles admin/résident/commission n'expirent jamais.</p>
+          )}
+
+          {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{err}</p>}
+        </div>
+        <div className="flex gap-2 px-5 pb-5">
+          <button
+            onClick={remove}
+            disabled={busy || isSelf || isLastAdmin}
+            className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 disabled:opacity-40"
+          >
+            🗑 Supprimer
+          </button>
+          <button
+            onClick={save}
+            disabled={busy}
+            className="flex-1 rounded-xl bg-comoe py-3 font-semibold text-white disabled:opacity-60"
+          >
+            {busy ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ModalField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} className="field-input" />
+    </label>
+  )
+}
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3">
+      <div className="relative">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
+        <div className={`h-6 w-11 rounded-full transition-colors ${checked ? 'bg-navy' : 'bg-slate-200'}`} />
+        <div
+          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : ''}`}
+        />
+      </div>
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+    </label>
   )
 }
 

@@ -63,6 +63,20 @@ export async function approveLoan(loan: Loan, book: Book | undefined, loans: Loa
   if (bErr) throw new Error(bErr.message)
 }
 
+/**
+ * Déclaration de retour par le membre : prêt → `pending_return`.
+ * Le livre reste `borrowed` jusqu'à validation par un admin/validateur
+ * (cf. markReturned desktop). Action côté emprunteur.
+ */
+export async function declareReturn(loan: Loan): Promise<void> {
+  const { error } = await supabase
+    .from('loans')
+    .update({ status: 'pending_return', returnedAt: nowIso() })
+    .eq('id', loan.id)
+    .eq('space_code', SPACE_ID)
+  if (error) throw new Error(error.message)
+}
+
 /** Rejette une demande d'emprunt : prêt → `rejected`. Le livre n'est pas modifié. */
 export async function rejectLoan(loan: Loan): Promise<void> {
   const { error } = await supabase

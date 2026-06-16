@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { useAuth } from '@/lib/auth'
 import { ROLE_LABEL } from '@/lib/capabilities'
 import { supabase } from '@/lib/supabase'
 import { SPACE_ID } from '@/lib/space'
+import { fileToCompressedDataUrl } from '@/lib/image'
 import type { User } from '@/lib/types'
 
 export function Profile() {
@@ -11,6 +12,8 @@ export function Profile() {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     whatsapp: '',
     commune: '',
@@ -33,8 +36,21 @@ export function Profile() {
       nom: user!.nom ?? '',
       email: user!.email ?? '',
     })
+    setPhoto(user!.photoB64 ?? null)
     setErr('')
     setEditing(true)
+  }
+
+  async function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setPhoto(await fileToCompressedDataUrl(file))
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : 'Image invalide.')
+    } finally {
+      if (fileRef.current) fileRef.current.value = ''
+    }
   }
 
   // Écriture (à relire) — cf. saveMyProfile (app.js)
@@ -44,6 +60,7 @@ export function Profile() {
       whatsapp: form.whatsapp.trim() || null,
       commune: form.commune.trim() || null,
       profession: form.profession.trim() || null,
+      photoB64: photo,
     }
     if (isResident) {
       if (!form.prenom.trim() || !form.nom.trim()) {
@@ -114,6 +131,35 @@ export function Profile() {
           </>
         ) : (
           <div className="mt-4 space-y-3 rounded-2xl bg-white p-4 shadow-card">
+            {/* Photo de profil */}
+            <div className="flex flex-col items-center gap-2 pb-1">
+              {photo ? (
+                <img src={photo} alt="" className="h-20 w-20 rounded-full object-cover ring-2 ring-navy/10" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-navy text-xl font-bold text-white">
+                  {initials || '?'}
+                </div>
+              )}
+              <input ref={fileRef} type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                >
+                  📷 {photo ? 'Changer' : 'Ajouter une photo'}
+                </button>
+                {photo && (
+                  <button
+                    type="button"
+                    onClick={() => setPhoto(null)}
+                    className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600"
+                  >
+                    Retirer
+                  </button>
+                )}
+              </div>
+            </div>
             {isResident && (
               <>
                 <Field label="Prénom" value={form.prenom} onChange={set('prenom')} />

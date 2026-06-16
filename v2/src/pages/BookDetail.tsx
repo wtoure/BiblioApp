@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { useBook } from '@/features/catalogue/useBooks'
 import { useLoans } from '@/features/loans/useLoans'
 import { canRequestLoan, requestLoan } from '@/features/loans/loanRequest'
+import { declareReturn } from '@/features/loans/loanActions'
 import { useAuth } from '@/lib/auth'
 import { SPACE_ID } from '@/lib/space'
 import { safeEmoji, statusInfo } from '@/lib/format'
@@ -84,10 +85,56 @@ export function BookDetail() {
           </div>
         )}
 
+        <ReturnCard book={book} />
         <LoanCard book={book} />
         <EditButton bookId={book.id} />
       </div>
     </div>
+  )
+}
+
+/** Déclaration de retour par l'emprunteur — visible s'il a un prêt en cours sur ce livre. */
+function ReturnCard({ book }: { book: Book }) {
+  const { user } = useAuth()
+  const { data: loans } = useLoans()
+  const qc = useQueryClient()
+  const [busy, setBusy] = useState(false)
+
+  if (!user) return null
+
+  const myLoan = (loans ?? []).find(
+    (l) => l.userId === user.id && l.bookId === book.id && (l.status === 'active' || l.status === 'pending_return'),
+  )
+  if (!myLoan) return null
+
+  if (myLoan.status === 'pending_return')
+    return (
+      <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-center text-sm font-medium text-amber-700 shadow-card">
+        ⏳ Retour déclaré — en attente de validation par un administrateur.
+      </div>
+    )
+
+  async function declare() {
+    if (!window.confirm(`Déclarer « ${book.titre} » comme rendu ?\nUn administrateur devra valider le retour.`)) return
+    setBusy(true)
+    try {
+      await declareReturn(myLoan!)
+      qc.invalidateQueries({ queryKey: ['loans', SPACE_ID] })
+    } catch (e) {
+      alert('Erreur : ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={declare}
+      disabled={busy}
+      className="mt-4 w-full rounded-xl bg-navy py-3.5 font-semibold text-white shadow-soft active:opacity-90 disabled:opacity-60"
+    >
+      {busy ? '…' : '📤 Rendre ce livre'}
+    </button>
   )
 }
 

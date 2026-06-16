@@ -57,6 +57,9 @@ export interface User {
   profession?: string | null
   email?: string | null
   assignedShelves?: string[]
+  neverExpires?: boolean
+  expiresAt?: string | null
+  propUntil?: string | null
 }
 
 export interface SpaceConfig {
