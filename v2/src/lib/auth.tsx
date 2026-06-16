@@ -15,13 +15,18 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null)
 
-/** Recherche un utilisateur par code de connexion (abbrev) dans l'espace courant. */
+/**
+ * Recherche un utilisateur par code de connexion (abbrev) dans l'espace courant.
+ * Le code est normalisé en minuscules (comme le desktop, app.js `value.trim().toLowerCase()`) :
+ * les abbrevs sont stockés en minuscules et les claviers mobiles capitalisent souvent
+ * la première lettre — sans cette normalisation, la connexion échoue (« Code de connexion inconnu »).
+ */
 async function findUserByCode(code: string): Promise<User | null> {
   const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('space_code', SPACE_ID)
-    .eq('abbrev', code.trim())
+    .eq('abbrev', code.trim().toLowerCase())
     .limit(1)
   if (error) throw new Error(error.message)
   return (data?.[0] as User) ?? null
