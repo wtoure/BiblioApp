@@ -44,7 +44,31 @@ const SPACE_ID = (function(){
   }
   /* /[code] → l'espace est le 1er segment */
   if(isLocal && _urlParts.length === 0) return DEFAULT_SPACE;
-  return _urlParts[0] ? decodeURIComponent(_urlParts[0]).toLowerCase() : null;
+  if(_urlParts[0]) return decodeURIComponent(_urlParts[0]).toLowerCase();
+  /* Lien d'invitation/réinitialisation sans code espace → espace par défaut.
+     Supabase place le token dans le fragment (#access_token=…&type=invite). */
+  const hasAuthToken = window.location.hash.includes('access_token') || new URLSearchParams(window.location.search).get('setpw');
+  return hasAuthToken ? DEFAULT_SPACE : null;
+})();
+
+/* ── URL de l'application mobile v2 (React) ──────────────────────────
+   Remplir après déploiement Netlify de v2/ en tant que site séparé.
+   Exemple : 'https://comoebiblio-app.netlify.app'
+   Laisser vide ('') pour désactiver la redirection mobile.
+────────────────────────────────────────────────────────────────────── */
+const V2_URL = '';
+
+/* Redirection automatique mobile → v2.
+   On ne redirige PAS si un token auth est présent dans l'URL
+   (lien d'invitation ou réinitialisation) : le flux PASSWORD_RECOVERY
+   doit se terminer ici avant tout. */
+(function(){
+  if(!V2_URL) return;
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(!isMobile) return;
+  const hasAuthToken = window.location.hash.includes('access_token') || new URLSearchParams(window.location.search).get('setpw');
+  if(hasAuthToken) return;
+  window.location.replace(V2_URL + window.location.pathname);
 })();
 
 /* Super-admin : le mot de passe N'EST PAS stocké ici.
