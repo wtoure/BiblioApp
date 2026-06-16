@@ -54,6 +54,9 @@ export interface User {
 export interface SpaceConfig {
   space_code: string
   openAll: boolean
+  openUntil?: string | null
+  propMotif?: string
+  currentSessionId?: number | null
   catAccess: Record<Role, CatType[]>
   contact?: string
   contactName?: string

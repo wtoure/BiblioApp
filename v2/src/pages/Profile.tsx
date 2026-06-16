@@ -1,33 +1,81 @@
+import { useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { useAuth } from '@/lib/auth'
-
-const ROLE_LABEL: Record<string, string> = {
-  admin: 'Administrateur',
-  commission: 'Commission',
-  enrol: 'Enrôleur',
-  member: 'Membre',
-  resident: 'Résident',
-  validator: 'Validateur',
-}
+import { ROLE_LABEL } from '@/lib/capabilities'
+import { supabase } from '@/lib/supabase'
+import { SPACE_ID } from '@/lib/space'
+import type { User } from '@/lib/types'
 
 export function Profile() {
-  const { user, logout } = useAuth()
-  if (!user) return null
+  const { user, logout, updateUser } = useAuth()
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [form, setForm] = useState({
+    whatsapp: '',
+    commune: '',
+    profession: '',
+    prenom: '',
+    nom: '',
+    email: '',
+  })
 
+  if (!user) return null
+  const isResident = user.role === 'resident'
   const initials = ((user.prenom[0] || '') + (user.nom[0] || '')).toUpperCase()
-  const infos: { label: string; value?: string | null }[] = [
-    { label: 'Code de connexion', value: user.abbrev },
-    { label: 'WhatsApp', value: user.whatsapp },
-    { label: 'Commune', value: user.commune },
-    { label: 'Profession', value: user.profession },
-    { label: 'E-mail', value: user.email },
-  ]
+
+  function startEdit() {
+    setForm({
+      whatsapp: user!.whatsapp ?? '',
+      commune: user!.commune ?? '',
+      profession: user!.profession ?? '',
+      prenom: user!.prenom ?? '',
+      nom: user!.nom ?? '',
+      email: user!.email ?? '',
+    })
+    setErr('')
+    setEditing(true)
+  }
+
+  // Écriture (à relire) — cf. saveMyProfile (app.js)
+  async function save() {
+    setErr('')
+    const updates: Record<string, string | null> = {
+      whatsapp: form.whatsapp.trim() || null,
+      commune: form.commune.trim() || null,
+      profession: form.profession.trim() || null,
+    }
+    if (isResident) {
+      if (!form.prenom.trim() || !form.nom.trim()) {
+        setErr('Prénom et nom obligatoires.')
+        return
+      }
+      updates.prenom = form.prenom.trim()
+      updates.nom = form.nom.trim()
+      updates.email = form.email.trim() || null
+    }
+    setBusy(true)
+    const { error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', user!.id)
+      .eq('space_code', SPACE_ID)
+    setBusy(false)
+    if (error) {
+      setErr(error.message)
+      return
+    }
+    updateUser(updates as Partial<User>)
+    setEditing(false)
+  }
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }))
 
   return (
     <div>
       <PageHeader title="Mon profil" />
       <div className="px-4 py-5">
-        {/* Carte identité */}
         <div className="flex flex-col items-center rounded-2xl bg-white p-6 shadow-card">
           {user.photoB64 ? (
             <img
@@ -48,15 +96,52 @@ export function Profile() {
           </span>
         </div>
 
-        {/* Informations */}
-        <dl className="mt-4 divide-y divide-slate-100 rounded-2xl bg-white shadow-card">
-          {infos.map((row) => (
-            <div key={row.label} className="flex items-baseline justify-between gap-4 px-4 py-3">
-              <dt className="text-sm text-slate-500">{row.label}</dt>
-              <dd className="text-right font-medium text-slate-800">{row.value || '—'}</dd>
+        {!editing ? (
+          <>
+            <dl className="mt-4 divide-y divide-slate-100 rounded-2xl bg-white shadow-card">
+              <Row label="Code de connexion" value={user.abbrev} />
+              <Row label="WhatsApp" value={user.whatsapp} />
+              <Row label="Commune" value={user.commune} />
+              <Row label="Profession" value={user.profession} />
+              <Row label="E-mail" value={user.email} />
+            </dl>
+            <button
+              onClick={startEdit}
+              className="mt-4 w-full rounded-xl bg-navy py-3 font-semibold text-white active:opacity-90"
+            >
+              ✏️ Modifier mes informations
+            </button>
+          </>
+        ) : (
+          <div className="mt-4 space-y-3 rounded-2xl bg-white p-4 shadow-card">
+            {isResident && (
+              <>
+                <Field label="Prénom" value={form.prenom} onChange={set('prenom')} />
+                <Field label="Nom" value={form.nom} onChange={set('nom')} />
+                <Field label="E-mail" value={form.email} onChange={set('email')} type="email" />
+              </>
+            )}
+            <Field label="WhatsApp" value={form.whatsapp} onChange={set('whatsapp')} type="tel" />
+            <Field label="Commune" value={form.commune} onChange={set('commune')} />
+            <Field label="Profession" value={form.profession} onChange={set('profession')} />
+            {err && <p className="text-sm text-red-600">{err}</p>}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setEditing(false)}
+                className="flex-1 rounded-xl bg-slate-100 py-3 font-semibold text-slate-600"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={save}
+                disabled={busy}
+                className="flex-1 rounded-xl bg-navy py-3 font-semibold text-white disabled:opacity-60"
+              >
+                {busy ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
             </div>
-          ))}
-        </dl>
+          </div>
+        )}
 
         <button
           onClick={logout}
@@ -66,5 +151,38 @@ export function Profile() {
         </button>
       </div>
     </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 px-4 py-3">
+      <dt className="text-sm text-slate-500">{label}</dt>
+      <dd className="text-right font-medium text-slate-800">{value || '—'}</dd>
+    </div>
+  )
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  type = 'text',
+}: {
+  label: string
+  value: string
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  type?: string
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={onChange}
+        className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-[15px] focus:border-navy focus:outline-none"
+      />
+    </label>
   )
 }

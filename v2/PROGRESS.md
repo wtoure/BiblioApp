@@ -26,7 +26,7 @@
 - [ ] Pagination/scroll infini si lenteur sur 1800+ items
 
 ## Phase 2 — Profil & rôles
-- [x] Page « Mon profil » (infos, photo, déconnexion) — lecture seule ; édition (écriture) à faire avec relecture
+- [x] Page « Mon profil » (infos, photo, déconnexion) + ÉDITION (whatsapp/commune/profession ; +prénom/nom/email résident) — écriture LIVE à relire
 - [x] Guide d'utilisation (capacités personnalisées par rôle, porté de _userCapabilities)
 - [x] Gardes fines par rôle sur chaque route (canAccess + composant Access, fidèle à showCom/showLoans/showAdm/showStat/showCA)
 - [x] Réalignement de la barre du bas et du menu « Plus » selon le rôle exact (bottomNavItems mirroir de bNav)

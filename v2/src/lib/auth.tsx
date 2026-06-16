@@ -10,6 +10,7 @@ interface AuthState {
   loading: boolean
   login: (code: string) => Promise<User>
   logout: () => void
+  updateUser: (patch: Partial<User>) => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -66,8 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  function updateUser(patch: Partial<User>) {
+    setUser((u) => (u ? { ...u, ...patch } : u))
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )
