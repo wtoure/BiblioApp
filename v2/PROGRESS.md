@@ -47,8 +47,9 @@
 - [x] Utilisateurs (liste, recherche, activer/désactiver — ÉCRITURE LIVE à relire). Dernière connexion : à ajouter.
 - [x] Inscriptions publiques (liste + **validation → création de compte**) — ÉCRITURE LIVE (genAbbrev + nxU anti-collision + insert users + update registrations) — À RELIRE avant prod.
 - [x] Statistiques (livres, membres, emprunts, demandes) — page /stats (commission) + section admin
-- [ ] Étagères / vérifications — à faire
-- [ ] Paramètres de l'espace (contact, catAccess, etc.) — à faire
+- [x] **Saisie catalogue** : ajout de livre (enrôleur + admin) — ÉCRITURE LIVE (nxB anti-collision + insert books) — À RELIRE
+- [ ] Étagères / vérifications — back-office desktop uniquement
+- [ ] Paramètres de l'espace (contact, catAccess, etc.) — back-office desktop uniquement
 
 ## Phase 6 — Parité & corrections
 - [x] Revue d'ensemble vs `app.js` — voir « Écarts connus » ci-dessous

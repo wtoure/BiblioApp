@@ -15,7 +15,7 @@ import { Admin } from '@/pages/Admin'
 import { Stats } from '@/pages/Stats'
 import { InstallGuide } from '@/pages/InstallGuide'
 import { Proposer } from '@/pages/Proposer'
-import { Placeholder } from '@/pages/Placeholder'
+import { Saisie } from '@/pages/Saisie'
 
 const queryClient = new QueryClient()
 
@@ -91,7 +91,7 @@ function Router() {
           path="/saisie"
           element={
             <Access path="/saisie">
-              <Placeholder title="Saisie catalogue" phase="Phase 1" />
+              <Saisie />
             </Access>
           }
         />

@@ -29,6 +29,9 @@ export function MoreSheet({ open, onClose }: Props) {
 
   const links: { to: string; label: string; icon: string }[] = [
     { to: '/catalogue', label: 'Catalogue', icon: '📚' },
+    ...(canAccess('/saisie', user.role, user.tabs)
+      ? [{ to: '/saisie', label: 'Saisie catalogue', icon: '📖' }]
+      : []),
     ...(canAccess('/proposer', user.role, user.tabs)
       ? [{ to: '/proposer', label: 'Proposer un livre', icon: '📝' }]
       : []),
