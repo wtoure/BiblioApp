@@ -9,6 +9,7 @@ import { BookDetail } from '@/pages/BookDetail'
 import { PublicCatalogue } from '@/pages/PublicCatalogue'
 import { Profile } from '@/pages/Profile'
 import { Guide } from '@/pages/Guide'
+import { Demandes } from '@/pages/Demandes'
 import { Placeholder } from '@/pages/Placeholder'
 
 const queryClient = new QueryClient()
@@ -53,7 +54,7 @@ function Router() {
           path="/demandes"
           element={
             <Access path="/demandes">
-              <Placeholder title="Demandes" phase="Phase 3" />
+              <Demandes />
             </Access>
           }
         />

@@ -32,11 +32,11 @@
 - [x] Réalignement de la barre du bas et du menu « Plus » selon le rôle exact (bottomNavItems mirroir de bNav)
 
 ## Phase 3 — Demandes (commission/membre/résident)
-- [ ] Liste des demandes + filtres par statut
-- [ ] Créer une demande (membre) — logique `app.js`
-- [ ] Sessions de demandes (ouverture/fermeture/historique)
-- [ ] Validation/rejet (commission) — écritures : implémenter, NE PAS tester contre prod
-- [ ] Suppression de session (cf. `delSess`)
+- [x] Liste des demandes + filtres par statut + stats
+- [ ] Créer une demande (membre) — à compléter (les membres n'atteignent pas /demandes ; flux depuis catalogue à porter)
+- [x] Sessions de demandes (liste lecture : statut, motif, compteur)
+- [x] Validation/rejet (commission) — ÉCRITURE LIVE (changeStatus → book_requests) — À RELIRE avant prod
+- [ ] Suppression de session (cf. `delSess`) — à compléter (écriture, à relire)
 
 ## Phase 4 — Emprunts
 - [ ] Demande d'emprunt (résident/membre autorisé)

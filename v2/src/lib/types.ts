@@ -66,3 +66,59 @@ export interface Space {
   active: boolean
   accentColor?: string | null
 }
+
+export type RequestStatus = 'pending' | 'approved' | 'rejected'
+
+export interface BookRequest {
+  id: number
+  space_code: string
+  titre: string
+  auteur: string
+  desc: string
+  motif: string
+  sessionId: number | null
+  dem: number | null
+  status: RequestStatus
+  note: string
+  date: string
+}
+
+export interface RequestSession {
+  id: number
+  space_code: string
+  motif: string
+  openDate: string
+  openUntil: string | null
+  closed: boolean
+  closedDate: string | null
+}
+
+export type LoanStatus = 'pending' | 'active' | 'pending_return' | 'returned' | 'rejected'
+
+export interface Loan {
+  id: string
+  space_code: string
+  bookId: number | null
+  bookTitle: string
+  userId: number | null
+  userAbbrev: string | null
+  userName: string | null
+  status: LoanStatus
+  dueDate: string
+  requestedAt: string
+  approvedAt?: string | null
+  returnedAt?: string | null
+}
+
+export interface Registration {
+  id: string
+  space_code: string
+  prenom: string
+  nom: string
+  whatsapp: string
+  commune: string
+  profession: string
+  email?: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  submittedAt: string
+}
