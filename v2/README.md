@@ -46,12 +46,20 @@ npm run preview     # prévisualise le build
 
 - [x] **Phase 0** — Fondation : projet, Supabase, PWA, shell, login, catalogue
 - [x] **Phase 1** — Catalogue + filtres avancés + fiche livre + vue publique `/book/:code`
-- [x] **Phase 2** — Profil (lecture), guide, gardes d'accès par rôle
-- [x] **Phase 3** — Demandes : liste, filtres, stats, sessions, validation/rejet *(écriture à relire)*
+- [x] **Phase 2** — Profil (lecture + **édition**), guide, gardes d'accès par rôle, **guide d'installation PWA**
+- [x] **Phase 3** — Demandes : liste, filtres, stats, sessions, validation/rejet + **proposer un livre** *(écritures à relire)*
 - [x] **Phase 4** — Emprunts : onglets statut, valider/retour/rejet *(écriture à relire)*
 - [x] **Phase 5** — Admin : utilisateurs (toggle), inscriptions (lecture), statistiques
-- [ ] **Reste à faire** — flux de **création/édition** (créer demande/emprunt, valider inscription→compte,
-  éditer profil, saisie catalogue, étagères, paramètres) + **compteurs** `space_counters` + **realtime**.
-  ⚠️ Ces écritures doivent être **relues et testées** avant de connecter la v2 aux vrais utilisateurs.
+- [x] **Compteurs** `space_counters` (nextId) — socle des créations
 
-> **Lecture : complète. Validations : fonctionnelles (à relire). Créations/éditions : à finir.**
+### Prêt pour les utilisateurs (lecture + flux courants)
+Connexion, catalogue (1800+), recherche/filtres, fiche, vue publique, **édition profil**,
+**proposer un livre**, guide, **installation sur écran d'accueil**. Commission/admin : validations.
+
+### Reste à porter (back-office — l'app desktop reste utilisée pour ça)
+- [ ] Demander un emprunt (côté emprunteur) + ouvrir/fermer/supprimer une session
+- [ ] Valider une inscription → création de compte (abbrev + nxU)
+- [ ] Saisie/import de livres (enrôleur, nxB), étagères, paramètres d'espace
+- [ ] Realtime (actuellement : rafraîchissement par cache TanStack Query)
+
+> ⚠️ Toutes les **écritures** (validations, édition profil, proposition) sont **fonctionnelles mais à relire/tester** avant usage réel.

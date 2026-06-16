@@ -75,6 +75,12 @@
 
 ---
 
+### Remise utilisateurs (2026-06-16)
+Ajoutés ce passage : guide d'installation PWA (iOS/Android, /installer + menu Plus),
+compteurs (nextId), config hook, profil ÉDITABLE, « Proposer un livre » (/proposer).
+→ Les utilisateurs courants peuvent utiliser l'app ; le back-office lourd (création de
+compte, import livres, sessions, étagères, paramètres) reste sur le desktop pour l'instant.
+
 ### Journal (dernière action)
 - 2026-06-16 — Migration menée jusqu'à Phase 5 + bilan Phase 6/7 en un seul passage (à la demande de l'utilisateur).
   Faites : catalogue+filtres, fiche, vue publique, profil(lecture), guide, gardes rôle, demandes (liste/validation),
