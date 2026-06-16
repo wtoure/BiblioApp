@@ -44,6 +44,10 @@ export interface User {
   spiritualAccess?: boolean
   tabs?: string[]
   photoB64?: string | null
+  whatsapp?: string | null
+  commune?: string | null
+  profession?: string | null
+  email?: string | null
 }
 
 export interface SpaceConfig {

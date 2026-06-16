@@ -26,7 +26,7 @@
 - [ ] Pagination/scroll infini si lenteur sur 1800+ items
 
 ## Phase 2 — Profil & rôles
-- [ ] Page « Mon profil » (infos, photo, déconnexion)
+- [x] Page « Mon profil » (infos, photo, déconnexion) — lecture seule ; édition (écriture) à faire avec relecture
 - [ ] Guide d'utilisation
 - [ ] Gardes fines par rôle sur chaque route (member/resident/enrol/validator/commission/admin)
 - [ ] Réalignement de la barre du bas et du menu « Plus » selon le rôle exact (cf. `bNav`/`bBottomNav`)
@@ -63,4 +63,4 @@
 ---
 
 ### Journal (dernière action)
-- 2026-06-15 — Filtres avancés catalogue (langue, salle, nouveautés) + panneau repliable. Build OK. Prochaine : Phase 2 (Mon profil), puis le reste de Phase 2.
+- 2026-06-16 — Page « Mon profil » (lecture seule : avatar/photoB64, infos whatsapp/commune/profession/email, déconnexion). Colonnes users vérifiées (photoB64, pas d'anneeArrivee). Build OK. Prochaine : Phase 2 — Guide d'utilisation.

@@ -6,6 +6,7 @@ import { Login } from '@/pages/Login'
 import { Catalogue } from '@/pages/Catalogue'
 import { BookDetail } from '@/pages/BookDetail'
 import { PublicCatalogue } from '@/pages/PublicCatalogue'
+import { Profile } from '@/pages/Profile'
 import { Placeholder } from '@/pages/Placeholder'
 
 const queryClient = new QueryClient()
@@ -44,7 +45,7 @@ function Router() {
         <Route path="/admin" element={<Placeholder title="Administration" phase="Phase 5" />} />
         <Route path="/stats" element={<Placeholder title="Statistiques" phase="Phase 5" />} />
         <Route path="/saisie" element={<Placeholder title="Saisie catalogue" phase="Phase 1" />} />
-        <Route path="/profil" element={<Placeholder title="Mon profil" phase="Phase 2" />} />
+        <Route path="/profil" element={<Profile />} />
         <Route path="/guide" element={<Placeholder title="Guide" phase="Phase 2" />} />
         <Route index element={<Navigate to="/catalogue" replace />} />
       </Route>
