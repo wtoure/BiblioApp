@@ -30,6 +30,7 @@ export function MoreSheet({ open, onClose }: Props) {
     { to: '/catalogue', label: 'Catalogue', icon: '📚' },
     { to: '/profil', label: 'Mon profil', icon: '👤' },
     { to: '/guide', label: 'Guide', icon: '❓' },
+    { to: '/installer', label: "Installer l'app", icon: '📲' },
   ]
 
   return (
