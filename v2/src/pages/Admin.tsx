@@ -9,13 +9,41 @@ import { useRegistrations } from '@/features/admin/useAdmin'
 import { ROLE_LABEL } from '@/lib/capabilities'
 import { supabase } from '@/lib/supabase'
 import { SPACE_ID } from '@/lib/space'
-import type { User } from '@/lib/types'
+import type { Registration, Role, User } from '@/lib/types'
 
 const SECTIONS: Section[] = [
   { key: 'users', label: 'Utilisateurs' },
   { key: 'registrations', label: 'Inscriptions' },
   { key: 'stats', label: 'Statistiques' },
 ]
+
+const ROLE_OPTIONS: { value: Role; label: string }[] = [
+  { value: 'member', label: 'Membre' },
+  { value: 'resident', label: 'Résident' },
+  { value: 'commission', label: 'Commission' },
+  { value: 'enrol', label: 'Enrôleur' },
+  { value: 'validator', label: 'Validateur' },
+]
+
+// Miroir de _genAbbrev (app.js) : 3 chars prénom + 2 chars nom, anti-collision
+function genAbbrev(prenom: string, nom: string, existingUsers: User[]): string {
+  let base = (prenom.substring(0, 3) + nom.substring(0, 2)).toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (base.length < 3) base = (base + 'usr').substring(0, 4)
+  let code = base
+  let i = 1
+  while (existingUsers.some((u) => u.abbrev === code)) {
+    code = base + i
+    i++
+  }
+  return code
+}
+
+// Miroir de calcExpiresAt (app.js) : fin d'année courante (janv–sept) ou suivante (oct–déc)
+function calcExpiresAt(): string {
+  const d = new Date()
+  const year = d.getFullYear()
+  return d.getMonth() < 9 ? `${year}-12-31` : `${year + 1}-12-31`
+}
 
 export function Admin() {
   const [section, setSection] = useState('users')
@@ -42,7 +70,6 @@ function UsersSection() {
     return l
   }, [users, q])
 
-  // Écriture (à relire) — activer/désactiver un compte (cf. togUser app.js)
   async function toggle(u: User) {
     const { error } = await supabase
       .from('users')
@@ -94,11 +121,111 @@ function UsersSection() {
 }
 
 function RegistrationsSection() {
+  const qc = useQueryClient()
   const { data: regs, isLoading } = useRegistrations()
+  const { data: users } = useUsers()
+  const [roles, setRoles] = useState<Record<string, Role>>({})
+  const [busy, setBusy] = useState<string | null>(null)
+
   const list = useMemo(
     () => [...(regs ?? [])].sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || '')),
     [regs],
   )
+
+  function getRoleFor(id: string): Role {
+    return roles[id] ?? 'member'
+  }
+
+  // Écriture — valider une inscription → création de compte (cf. approveRegistration app.js)
+  async function approve(r: Registration) {
+    const role = getRoleFor(r.id)
+    const abbrev = genAbbrev(r.prenom, r.nom, users ?? [])
+    if (
+      !window.confirm(
+        `Créer le compte de ${r.prenom} ${r.nom} ?\n\nRôle : ${ROLE_LABEL[role] ?? role}\nCode de connexion : ${abbrev}\n\nLe membre utilisera ce code pour se connecter.`,
+      )
+    )
+      return
+    setBusy(r.id)
+    try {
+      // Lire le compteur frais depuis Supabase (anti-collision entre sessions) — cf. approveRegistration desktop
+      const { data: ctr } = await supabase
+        .from('space_counters')
+        .select('nxU')
+        .eq('space_code', SPACE_ID)
+        .maybeSingle()
+      const freshNxU = (ctr?.nxU as number | undefined) ?? 1
+      const maxExisting = (users ?? []).reduce((m, u) => Math.max(m, u.id), 0)
+      const newId = Math.max(freshNxU, maxExisting + 1)
+
+      // 1. Réserver l'ID en sauvegardant le compteur EN PREMIER
+      const { error: cErr } = await supabase
+        .from('space_counters')
+        .upsert({ space_code: SPACE_ID, nxU: newId + 1 })
+      if (cErr) throw new Error(cErr.message)
+
+      // 2. Créer l'utilisateur
+      const neverExp = ['resident', 'commission', 'admin'].includes(role)
+      const nu = {
+        id: newId,
+        space_code: SPACE_ID,
+        abbrev,
+        prenom: r.prenom,
+        nom: r.nom,
+        role,
+        canPropose: true,
+        canLoan: false,
+        propUntil: null,
+        disabled: false,
+        expiresAt: neverExp ? null : calcExpiresAt(),
+        neverExpires: neverExp,
+        whatsapp: r.whatsapp || '',
+        commune: r.commune || '',
+        profession: r.profession || '',
+        email: r.email || '',
+        tabs: [],
+        createdAt: new Date().toISOString(),
+      }
+      const { error: uErr } = await supabase.from('users').insert(nu)
+      if (uErr) throw new Error(uErr.message)
+
+      // 3. Marquer l'inscription comme approuvée
+      const processedAt = new Date().toISOString()
+      const { error: rErr } = await supabase
+        .from('registrations')
+        .update({ status: 'approved', assignedRole: role, createdAbbrev: abbrev, createdUserId: newId, processedAt })
+        .eq('id', r.id)
+        .eq('space_code', SPACE_ID)
+      if (rErr) throw new Error(rErr.message)
+
+      qc.invalidateQueries({ queryKey: ['registrations', SPACE_ID] })
+      qc.invalidateQueries({ queryKey: ['users', SPACE_ID] })
+      alert(`✅ Compte créé !\n\n${r.prenom} ${r.nom}\nRôle : ${ROLE_LABEL[role] ?? role}\nCode de connexion : ${abbrev}`)
+    } catch (e) {
+      alert('❌ Erreur : ' + (e instanceof Error ? e.message : String(e)) + '\n\nAucun compte n\'a été créé.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function reject(r: Registration) {
+    if (!window.confirm(`Rejeter l'inscription de ${r.prenom} ${r.nom} ?`)) return
+    setBusy(r.id)
+    try {
+      const { error } = await supabase
+        .from('registrations')
+        .update({ status: 'rejected', processedAt: new Date().toISOString() })
+        .eq('id', r.id)
+        .eq('space_code', SPACE_ID)
+      if (error) throw new Error(error.message)
+      qc.invalidateQueries({ queryKey: ['registrations', SPACE_ID] })
+    } catch (e) {
+      alert('Erreur : ' + (e instanceof Error ? e.message : String(e)))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="px-3 pt-3">
       {isLoading && <p className="py-10 text-center text-slate-400">Chargement…</p>}
@@ -125,15 +252,48 @@ function RegistrationsSection() {
               {r.whatsapp} · {r.commune}
               {r.profession ? ` · ${r.profession}` : ''}
             </div>
+            {r.status === 'approved' && r.createdAbbrev && (
+              <div className="mt-1 text-xs font-medium text-green-700">
+                Code : {r.createdAbbrev} · {ROLE_LABEL[r.assignedRole as Role] ?? r.assignedRole}
+              </div>
+            )}
+            {r.status === 'pending' && (
+              <div className="mt-2 space-y-2">
+                <select
+                  value={getRoleFor(r.id)}
+                  onChange={(e) => setRoles((prev) => ({ ...prev, [r.id]: e.target.value as Role }))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[15px] focus:border-navy focus:outline-none"
+                >
+                  {ROLE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => approve(r)}
+                    disabled={busy === r.id}
+                    className="flex-1 rounded-xl bg-green-600 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {busy === r.id ? '…' : '✅ Valider'}
+                  </button>
+                  <button
+                    onClick={() => reject(r)}
+                    disabled={busy === r.id}
+                    className="flex-1 rounded-xl bg-red-50 py-2 text-sm font-semibold text-red-600 disabled:opacity-60"
+                  >
+                    Rejeter
+                  </button>
+                </div>
+              </div>
+            )}
           </li>
         ))}
         {!isLoading && list.length === 0 && (
           <li className="py-10 text-center text-slate-400">Aucune inscription.</li>
         )}
       </ul>
-      <p className="pb-6 text-center text-xs text-slate-400">
-        La validation d'une inscription (création de compte) sera ajoutée après relecture.
-      </p>
     </div>
   )
 }

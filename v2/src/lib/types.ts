@@ -124,4 +124,8 @@ export interface Registration {
   email?: string | null
   status: 'pending' | 'approved' | 'rejected'
   submittedAt: string
+  assignedRole?: string | null
+  createdAbbrev?: string | null
+  createdUserId?: number | null
+  processedAt?: string | null
 }

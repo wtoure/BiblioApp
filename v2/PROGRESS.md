@@ -45,7 +45,7 @@
 
 ## Phase 5 — Admin
 - [x] Utilisateurs (liste, recherche, activer/désactiver — ÉCRITURE LIVE à relire). Dernière connexion : à ajouter.
-- [x] Inscriptions publiques (liste lecture). Validation → création de compte : à compléter (counters/abbrev) & relire.
+- [x] Inscriptions publiques (liste + **validation → création de compte**) — ÉCRITURE LIVE (genAbbrev + nxU anti-collision + insert users + update registrations) — À RELIRE avant prod.
 - [x] Statistiques (livres, membres, emprunts, demandes) — page /stats (commission) + section admin
 - [ ] Étagères / vérifications — à faire
 - [ ] Paramètres de l'espace (contact, catAccess, etc.) — à faire
@@ -61,7 +61,7 @@
 - **Flux de création/édition NON portés (à faire) :**
   - Créer une demande (membre) + ouvrir/fermer/supprimer une session (counters nxR/nxS)
   - Demander un emprunt (emprunteur) + gestion des compteurs nxL
-  - Valider une inscription → création de compte (abbrev + counters nxU)
+  - ~~Valider une inscription → création de compte (abbrev + counters nxU)~~ ✅ fait
   - Éditer son profil (écriture users)
   - « Saisie » enrôleur : ajout/édition/import de livres (counters nxB)
   - Étagères / vérifications, paramètres d'espace (catAccess, contact…)
