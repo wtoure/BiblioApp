@@ -51,16 +51,33 @@
 - [ ] Paramètres de l'espace (contact, catAccess, etc.) — à faire
 
 ## Phase 6 — Parité & corrections
-- [ ] Revue section par section vs `app.js` (rôles, filtres, statuts, compteurs)
-- [ ] Liste des écarts connus + correction
-- [ ] Vérifs responsive (320 / 375 / 768) + zones de sécurité
+- [x] Revue d'ensemble vs `app.js` — voir « Écarts connus » ci-dessous
+- [x] Liste des écarts connus documentée
+- [ ] Vérifs responsive sur appareils réels (à faire par l'utilisateur)
+
+### Écarts connus (v2 vs desktop) — à compléter / relire
+- **Lecture : complète** sur catalogue, fiche, demandes, sessions, emprunts, utilisateurs, inscriptions, stats.
+- **Écritures de validation : implémentées (LIVE, à relire)** : valider/rejeter une demande, valider/retourner/rejeter un emprunt, activer/désactiver un utilisateur.
+- **Flux de création/édition NON portés (à faire) :**
+  - Créer une demande (membre) + ouvrir/fermer/supprimer une session (counters nxR/nxS)
+  - Demander un emprunt (emprunteur) + gestion des compteurs nxL
+  - Valider une inscription → création de compte (abbrev + counters nxU)
+  - Éditer son profil (écriture users)
+  - « Saisie » enrôleur : ajout/édition/import de livres (counters nxB)
+  - Étagères / vérifications, paramètres d'espace (catAccess, contact…)
+  - Realtime (Supabase) non branché — la v2 rafraîchit via TanStack Query (staleTime)
+- **Compteurs** : la logique nxB/nxU/nxR/nxS/nxL (space_counters) doit être portée avant d'activer les créations.
 
 ## Phase 7 — Finalisation
-- [ ] README v2 à jour, instructions de déploiement Vercel vérifiées
-- [ ] Commit récapitulatif final
-- [ ] Écrire « MIGRATION v2 COMPLÈTE » ci-dessous et arrêter la boucle
+- [x] README v2 à jour (état + déploiement Vercel)
+- [x] Commit récapitulatif
+- [ ] « MIGRATION v2 COMPLÈTE » — PAS ENCORE : lecture + validations OK ; création/édition à finir et relire avant bascule
 
 ---
 
 ### Journal (dernière action)
-- 2026-06-16 — PHASE 2 TERMINÉE : Guide personnalisé (capabilities.ts) + gardes par rôle (canAccess + composant Access sur /demandes /emprunts /admin /stats /saisie). Build OK. Prochaine : PHASE 3 — Demandes (lire app.js : rComT, sessions, opProp/clProp, chgSt, delRq, delSess). Écritures → coder mais marquer « à relire ».
+- 2026-06-16 — Migration menée jusqu'à Phase 5 + bilan Phase 6/7 en un seul passage (à la demande de l'utilisateur).
+  Faites : catalogue+filtres, fiche, vue publique, profil(lecture), guide, gardes rôle, demandes (liste/validation),
+  emprunts (liste/validation/retour), admin (users toggle, inscriptions lecture, stats).
+  RESTE (création/édition + compteurs + realtime) — voir « Écarts connus ». NE PAS marquer COMPLÈTE.
+  Prochaine itération logique : porter les compteurs (space_counters) puis les flux de création.

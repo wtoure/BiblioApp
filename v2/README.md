@@ -42,12 +42,16 @@ npm run preview     # prévisualise le build
    - `VITE_SUPABASE_ANON_KEY`
    (sinon les valeurs publiques par défaut sont utilisées)
 
-## Feuille de route
+## État (voir PROGRESS.md pour le détail)
 
-- [x] **Phase 0** — Fondation : projet, Supabase, PWA, shell (barre du bas + menu), login, catalogue
-- [ ] **Phase 1** — Catalogue complet + fiche livre + vue publique `/book/:code`
-- [ ] **Phase 2** — Profil, guide, gestion fine des rôles
-- [ ] **Phase 3** — Demandes (sessions, validation commission)
-- [ ] **Phase 4** — Emprunts
-- [ ] **Phase 5** — Admin (utilisateurs, inscriptions, stats, étagères)
-- [ ] **Phase 6** — Bascule / parité
+- [x] **Phase 0** — Fondation : projet, Supabase, PWA, shell, login, catalogue
+- [x] **Phase 1** — Catalogue + filtres avancés + fiche livre + vue publique `/book/:code`
+- [x] **Phase 2** — Profil (lecture), guide, gardes d'accès par rôle
+- [x] **Phase 3** — Demandes : liste, filtres, stats, sessions, validation/rejet *(écriture à relire)*
+- [x] **Phase 4** — Emprunts : onglets statut, valider/retour/rejet *(écriture à relire)*
+- [x] **Phase 5** — Admin : utilisateurs (toggle), inscriptions (lecture), statistiques
+- [ ] **Reste à faire** — flux de **création/édition** (créer demande/emprunt, valider inscription→compte,
+  éditer profil, saisie catalogue, étagères, paramètres) + **compteurs** `space_counters` + **realtime**.
+  ⚠️ Ces écritures doivent être **relues et testées** avant de connecter la v2 aux vrais utilisateurs.
+
+> **Lecture : complète. Validations : fonctionnelles (à relire). Créations/éditions : à finir.**
