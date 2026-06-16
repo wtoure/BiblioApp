@@ -217,6 +217,16 @@ function _nextUserId(){
   return newId;
 }
 
+/* ID livre anti-collision : max(ids existants, nxB) + 1.
+   Évite qu'un nxB obsolète n'écrase un livre existant via upsert. */
+function _nextBookId(){
+  let maxId=nxB-1;
+  books.forEach(b=>{const n=parseInt(b.id);if(!isNaN(n)&&n>maxId)maxId=n;});
+  const newId=maxId+1;
+  nxB=newId+1;
+  return newId;
+}
+
 /* Déduplique un tableau d'objets par leur id (garde la dernière occurrence) */
 function _dedupById(arr){
   const map=new Map();
@@ -594,7 +604,9 @@ async function loadAllData(){
           hideLoading();return;
         }
 
-        /* Vérification renforcée : abbrev + token de session */
+        /* Vérification : l'abbrev du compte doit correspondre (auth par code, sans mot de passe).
+           NB : le champ `tok` stocké à la connexion n'est pas vérifié côté serveur — l'auth
+           repose entièrement sur la connaissance de l'abbrev. */
         if(userDoc&&userDoc.abbrev===sessionData.abbrev&&!userDoc.disabled){
           /* Session valide — normaliser l'ID */
           userDoc.id=parseInt(sessionData.id)||sessionData.id;
@@ -916,8 +928,10 @@ async function _fetchAndCache(col, sv){
     const today=new Date().toISOString().split('T')[0];
     users.forEach(u=>{
       if(u.neverExpires)return;
-      if(u.expiresAt&&u.expiresAt<today&&!u.disabled&&!u.neverExpires&&u.role!=='admin'&&u.role!=='resident'&&u.role!=='commission')
+      if(u.expiresAt&&u.expiresAt<today&&!u.disabled&&!u.neverExpires&&u.role!=='admin'&&u.role!=='resident'&&u.role!=='commission'){
+        u.disabled=true;/* MAJ locale : évite de réémettre le même write à chaque fetch */
         sbUpd('users',u.id,{disabled:true}).catch(()=>{});
+      }
     });
   }
   else if(col==='requests')requests=_dedupById(data);
@@ -2683,8 +2697,8 @@ function rAdmBk(page=admBkPage){
   if(fExpl){
     const n=parseInt(fExpl);
     /* "5+" = 5 ou plus */
-    if(fExpl==='5') list=list.filter(b=>(parseInt(b.exemplaires)||parseInt(b.expl)||1)>=5);
-    else             list=list.filter(b=>(parseInt(b.exemplaires)||parseInt(b.expl)||1)===n);
+    if(fExpl==='5') list=list.filter(b=>(parseInt(b.expl)||parseInt(b.exemplaires)||1)>=5);
+    else             list=list.filter(b=>(parseInt(b.expl)||parseInt(b.exemplaires)||1)===n);
   }
   if(!list.length){tb.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:36px;color:var(--g400)">Aucun résultat</td></tr>`;
     renderPagination('adm-bk-pgn',1,0,ADM_BK_PER,p=>rAdmBk(p));return;}
@@ -2792,7 +2806,7 @@ async function savBk(){
         Object.fromEntries(changedFields.map(k=>([k,{from:existing?.[k],to:d[k]}]))));
     }catch(e){console.error('[savBk update]',e.message);alert('❌ Erreur mise à jour livre : '+e.message);return;}
   } else {
-    const nb={id:nxB++,...d,status:'available',addedAt:now,updatedAt:now,updatedBy:who,version:1,
+    const nb={id:_nextBookId(),...d,status:'available',addedAt:now,updatedAt:now,updatedBy:who,version:1,
       lastModifiedBy:curUser?.prenom+' '+curUser?.nom,lastModifiedAt:now,lastModifiedRole:curUser?.role||'?'};
     try{
       await sbSet('books',nb.id,nb);
@@ -2801,7 +2815,7 @@ async function savBk(){
       _cachePut({books});
       _logBookChange(nb.id,nb.titre,{action:'ajout'});
     }catch(e){
-      nxB--;/* Annuler l'incrément */
+      nxB--;/* Annuler l'incrément (l'ID sera recalculé au prochain ajout) */
       console.error('[savBk]',e);
       alert('❌ Erreur de sauvegarde du livre : '+e.message+'\n\nLe livre n\'a pas été enregistré. Vérifiez votre connexion et réessayez.');
       return;
@@ -3841,7 +3855,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
     });
 
     /* 4. Exemplaires ≤ 0 */
-    const zeroExpl=books.filter(b=>b.status!=='retired'&&(parseInt(b.exemplaires)||parseInt(b.expl)||1)<1);
+    const zeroExpl=books.filter(b=>b.status!=='retired'&&(parseInt(b.expl)||parseInt(b.exemplaires)||1)<1);
     if(zeroExpl.length) anomalies.push({
       level:'critical',cat:'books',
       title:'Livres avec 0 exemplaire ou valeur invalide',
@@ -3951,7 +3965,7 @@ async function runDiag(){if(!_requireAdmin('runDiag'))return;
     const overLoan=books.filter(b=>{
       if(b.status==='retired')return false;
       const active=loans.filter(l=>String(l.bookId)===String(b.id)&&(l.status==='active'||l.status==='pending_return')).length;
-      const copies=Math.max(1,parseInt(b.exemplaires)||parseInt(b.expl)||1);
+      const copies=Math.max(1,parseInt(b.expl)||parseInt(b.exemplaires)||1);
       return active>copies;
     });
     if(overLoan.length) anomalies.push({
@@ -4463,10 +4477,9 @@ function openMyProfile(){
     setVal('pf-prenom',curUser.prenom);
     setVal('pf-nom',curUser.nom);
     setVal('pf-email',curUser.email);
-    setVal('pf-year',curUser.anneeArrivee);
   }
   /* Avatar */
-  _profilePhotoB64=curUser.photo||null;
+  _profilePhotoB64=curUser.photoB64||null;
   _renderProfileAvatar();
   document.getElementById('pf-err').textContent='';
   openM('m-profile');
@@ -4487,9 +4500,25 @@ function _renderProfileAvatar(){
 
 function handleProfilePhoto(input){
   const file=input.files[0];if(!file)return;
-  if(file.size>500*1024){alert('Photo trop volumineuse. Maximum 500 Ko.');return;}
+  if(!file.type.startsWith('image/')){alert('Veuillez sélectionner une image.');return;}
+  if(file.size>8*1024*1024){alert('Image trop volumineuse (max 8 Mo).');return;}
   const reader=new FileReader();
-  reader.onload=e=>{_profilePhotoB64=e.target.result;_renderProfileAvatar();};
+  reader.onload=e=>{
+    /* Redimensionner/compresser en JPEG 256px pour éviter de stocker des photos lourdes */
+    const img=new Image();
+    img.onload=()=>{
+      const max=256,scale=Math.min(1,max/Math.max(img.width,img.height));
+      const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      const ctx=c.getContext('2d');
+      if(!ctx){_profilePhotoB64=e.target.result;_renderProfileAvatar();return;}
+      ctx.drawImage(img,0,0,w,h);
+      _profilePhotoB64=c.toDataURL('image/jpeg',0.8);
+      _renderProfileAvatar();
+    };
+    img.onerror=()=>alert('Image illisible.');
+    img.src=e.target.result;
+  };
   reader.readAsDataURL(file);
 }
 
@@ -4501,7 +4530,7 @@ async function saveMyProfile(){
     whatsapp:document.getElementById('pf-whatsapp')?.value.trim()||null,
     commune:document.getElementById('pf-commune')?.value.trim()||null,
     profession:document.getElementById('pf-profession')?.value.trim()||null,
-    photo:_profilePhotoB64||null,
+    photoB64:_profilePhotoB64||null,
   };
   if(isResident){
     const prenom=document.getElementById('pf-prenom')?.value.trim();
@@ -4510,7 +4539,6 @@ async function saveMyProfile(){
     updates.prenom=prenom;
     updates.nom=nom;
     updates.email=document.getElementById('pf-email')?.value.trim()||null;
-    updates.anneeArrivee=document.getElementById('pf-year')?.value||null;
   }
   /* Nettoyer les valeurs null */
   Object.keys(updates).forEach(k=>{if(updates[k]===null)delete updates[k];});
@@ -5489,6 +5517,8 @@ async function doImport(){
     }
     /* Insérer par lots de 500 (limite Supabase) */
     let added=0;
+    /* Mode ajout : amorcer nxB au-delà du max existant pour éviter d'écraser des livres */
+    if(!clr){const m=_maxId(books)+1;if(nxB<m)nxB=m;}
     const newBooks=impParsed.map(r=>({id:nxB++,titre:r.titre||'',auteur:r.auteur||'',cat:r.cat||'Général',
       salle:r.salle||'',placard:r.placard||'',etagere:r.etagere||'',lang:r.lang||'',
       annee:r.annee?parseInt(r.annee)||null:null,expl:r.expl?parseInt(r.expl)||1:1,
@@ -6064,7 +6094,7 @@ function openLoanModal(bookId){
   if(b.status==='missing'){alert('⚠️ Ce livre est signalé introuvable à son emplacement. L\'emprunt n\'est pas possible tant qu\'il n\'a pas été retrouvé.');return;}
   /* Vérifier disponibilité en tenant compte des exemplaires */
   const activeLoansForBook=loans.filter(l=>l.bookId==bookId&&(l.status==='active'||l.status==='pending_return')).length;
-  const copies=parseInt(b.exemplaires)||1;
+  const copies=parseInt(b.expl)||parseInt(b.exemplaires)||1;
   if(activeLoansForBook>=copies){alert('Aucun exemplaire disponible ('+copies+' exemplaire(s), '+activeLoansForBook+' emprunté(s)).');return;}
   /* Vérifier un retour en attente de validation */
   const pendingReturn=loans.find(l=>l.userId==curUser?.id&&l.status==='pending_return');
@@ -6186,7 +6216,7 @@ async function approveLoan(loanId){
       (x.status==='active'||x.status==='pending_return')&&
       x.id!=loanId
     ).length;
-    const copies=Math.max(1,parseInt(b.exemplaires)||parseInt(b.expl)||1);
+    const copies=Math.max(1,parseInt(b.expl)||parseInt(b.exemplaires)||1);
     if(activeLoansForBook>=copies){
       alert('Aucun exemplaire disponible pour ce livre.\n'+copies+' exemplaire(s) — '+activeLoansForBook+' actuellement emprunté(s).');
       return;
