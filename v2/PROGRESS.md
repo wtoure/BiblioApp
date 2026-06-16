@@ -27,7 +27,7 @@
 
 ## Phase 2 — Profil & rôles
 - [x] Page « Mon profil » (infos, photo, déconnexion) — lecture seule ; édition (écriture) à faire avec relecture
-- [ ] Guide d'utilisation
+- [x] Guide d'utilisation (capacités personnalisées par rôle, porté de _userCapabilities)
 - [ ] Gardes fines par rôle sur chaque route (member/resident/enrol/validator/commission/admin)
 - [ ] Réalignement de la barre du bas et du menu « Plus » selon le rôle exact (cf. `bNav`/`bBottomNav`)
 

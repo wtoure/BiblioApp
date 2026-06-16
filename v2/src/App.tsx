@@ -7,6 +7,7 @@ import { Catalogue } from '@/pages/Catalogue'
 import { BookDetail } from '@/pages/BookDetail'
 import { PublicCatalogue } from '@/pages/PublicCatalogue'
 import { Profile } from '@/pages/Profile'
+import { Guide } from '@/pages/Guide'
 import { Placeholder } from '@/pages/Placeholder'
 
 const queryClient = new QueryClient()
@@ -46,7 +47,7 @@ function Router() {
         <Route path="/stats" element={<Placeholder title="Statistiques" phase="Phase 5" />} />
         <Route path="/saisie" element={<Placeholder title="Saisie catalogue" phase="Phase 1" />} />
         <Route path="/profil" element={<Profile />} />
-        <Route path="/guide" element={<Placeholder title="Guide" phase="Phase 2" />} />
+        <Route path="/guide" element={<Guide />} />
         <Route index element={<Navigate to="/catalogue" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/catalogue" replace />} />

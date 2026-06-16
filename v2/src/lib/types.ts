@@ -41,6 +41,7 @@ export interface User {
   role: Role
   disabled: boolean
   canLoan?: boolean
+  canPropose?: boolean
   spiritualAccess?: boolean
   tabs?: string[]
   photoB64?: string | null
