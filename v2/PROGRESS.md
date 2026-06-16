@@ -39,9 +39,9 @@
 - [ ] Suppression de session (cf. `delSess`) — à compléter (écriture, à relire)
 
 ## Phase 4 — Emprunts
-- [ ] Demande d'emprunt (résident/membre autorisé)
-- [ ] Validation / retour / rejet (validator/admin)
-- [ ] Statuts de prêt (pending/active/pending_return/returned/rejected)
+- [ ] Demande d'emprunt (résident/membre autorisé) — à compléter (flux côté emprunteur)
+- [x] Validation / retour / rejet (validator/admin) — ÉCRITURE LIVE (setStatus → loans) — À RELIRE
+- [x] Statuts de prêt (onglets À valider / En cours / Retours / Historique)
 
 ## Phase 5 — Admin
 - [ ] Utilisateurs (liste, dernière connexion, activer/désactiver)
