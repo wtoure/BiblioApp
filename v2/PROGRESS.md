@@ -44,11 +44,11 @@
 - [x] Statuts de prêt (onglets À valider / En cours / Retours / Historique)
 
 ## Phase 5 — Admin
-- [ ] Utilisateurs (liste, dernière connexion, activer/désactiver)
-- [ ] Inscriptions publiques (validation → création de compte)
-- [ ] Statistiques
-- [ ] Étagères / vérifications
-- [ ] Paramètres de l'espace (contact, catAccess, etc.)
+- [x] Utilisateurs (liste, recherche, activer/désactiver — ÉCRITURE LIVE à relire). Dernière connexion : à ajouter.
+- [x] Inscriptions publiques (liste lecture). Validation → création de compte : à compléter (counters/abbrev) & relire.
+- [x] Statistiques (livres, membres, emprunts, demandes) — page /stats (commission) + section admin
+- [ ] Étagères / vérifications — à faire
+- [ ] Paramètres de l'espace (contact, catAccess, etc.) — à faire
 
 ## Phase 6 — Parité & corrections
 - [ ] Revue section par section vs `app.js` (rôles, filtres, statuts, compteurs)

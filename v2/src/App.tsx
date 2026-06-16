@@ -11,6 +11,8 @@ import { Profile } from '@/pages/Profile'
 import { Guide } from '@/pages/Guide'
 import { Demandes } from '@/pages/Demandes'
 import { Emprunts } from '@/pages/Emprunts'
+import { Admin } from '@/pages/Admin'
+import { Stats } from '@/pages/Stats'
 import { Placeholder } from '@/pages/Placeholder'
 
 const queryClient = new QueryClient()
@@ -71,7 +73,7 @@ function Router() {
           path="/admin"
           element={
             <Access path="/admin">
-              <Placeholder title="Administration" phase="Phase 5" />
+              <Admin />
             </Access>
           }
         />
@@ -79,7 +81,7 @@ function Router() {
           path="/stats"
           element={
             <Access path="/stats">
-              <Placeholder title="Statistiques" phase="Phase 5" />
+              <Stats />
             </Access>
           }
         />
