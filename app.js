@@ -4435,7 +4435,9 @@ async function submitPubRegister(){
   const entry={id:regId,space_code:SPACE_ID,prenom,nom,whatsapp,commune,profession,email:email.toLowerCase(),
     status:'pending',submittedAt:new Date().toISOString()};
   try{
-    const {error}=await sb.from('registrations').upsert(entry);
+    /* insert (et non upsert) : chaque inscription a un id unique (reg_<timestamp>).
+       L'upsert exigerait une policy UPDATE côté anon → violerait la RLS. */
+    const {error}=await sb.from('registrations').insert(entry);
     if(error)throw new Error(error.message);
     _showRegSuccess(prenom);
   }catch(e){
