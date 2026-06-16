@@ -1743,7 +1743,8 @@ function showCat(){
   ['ft','fa','fc','fl'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const qs=document.getElementById('qs');if(qs)qs.value='';
   catTypeFilter='all';
-  sv('vc');sChip('a0','n0');bNav('nl0','vc');updRB();rCatTypeTabs();rCat();
+  catCatSel='';catLangSel='';catAvailSel='all';catSortSel='default';
+  sv('vc');sChip('a0','n0');bNav('nl0','vc');updRB();rCatTypeTabs();rCatFilters();rCat();
   /* Afficher/masquer la section "Mes étagères" selon le rôle */
   const _shelfSec=document.getElementById('shelf-mgr-section');
   if(_shelfSec){
@@ -1767,7 +1768,7 @@ function rCatTypeTabs(){
   if(allowed.length<=1){el.innerHTML='';catTypeFilter='all';return;}
   const tabs=[{k:'all',l:'Tous les livres',ico:'📚'},...catDefs.map(t=>({k:t.id,l:t.label,ico:t.emoji}))];
   el.innerHTML=tabs.filter(t=>t.k==='all'||allowed.includes(t.k)).map(t=>html`
-    <button onclick="catTypeFilter='${t.k}';catPage=1;rCatTypeTabs();rCat();"
+    <button onclick="catTypeFilter='${t.k}';catPage=1;rCatTypeTabs();rCatFilters();rCat();"
       style="padding:7px 16px;border-radius:20px;border:1.5px solid ${catTypeFilter===t.k?'var(--navy)':'var(--g200)'};
       background:${catTypeFilter===t.k?'var(--navy)':'white'};color:${catTypeFilter===t.k?'white':'var(--g600)'};
       font-size:13px;font-weight:500;cursor:pointer;font-family:inherit">${t.ico} ${t.l}</button>`).join('');
@@ -1775,13 +1776,17 @@ function rCatTypeTabs(){
 function apSrch(){sf.t=document.getElementById('ft').value.toLowerCase();sf.a=document.getElementById('fa').value.toLowerCase();sf.c=document.getElementById('fc').value.toLowerCase();sf.l=document.getElementById('fl').value.toLowerCase();catPage=1;rCat(1);}
 function qSearch(v){const q=v.toLowerCase();sf={t:q,a:q,c:q,l:q};catPage=1;rCat(1);}
 let catNewOnly=false,catFeatOnly=false;
-function gFilt(){
+/* Critères de sélection avancés (membre connecté) */
+let catCatSel='',catLangSel='',catAvailSel='all',catSortSel='default';
+
+/* Livres accessibles à l'utilisateur courant (droits catalogue + onglet catType),
+   hors livres retirés. Source unique pour gFilt() et les listes déroulantes. */
+function _catAccessibleBooks(){
   const _ca=cfg.catAccess||{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']};
   const _catDefs=_getCatTypes();
-  /* L'admin voit tous les catalogues */
   const isAdmin=curUser&&curUser.role==='admin';
   const allowedCats=isAdmin?_catDefs.map(t=>t.id):(curUser?(_ca[curUser.role]||['academique']):['academique']);
-  const avail=books.filter(b=>{
+  return books.filter(b=>{
     if(b.status==='retired')return false;
     const bType=b.catType||'academique';
     const catDef=_catDefs.find(t=>t.id===bType);
@@ -1792,12 +1797,21 @@ function gFilt(){
     if(catTypeFilter&&catTypeFilter!=='all'&&bType!==catTypeFilter)return false;
     return true;
   });
+}
+
+function gFilt(){
+  const avail=_catAccessibleBooks();
   /* Filtres Nouveautés et Mis en avant */
   const now_gf=Date.now();
   let availFiltered=avail.slice();
   if(catNewOnly)availFiltered=availFiltered.filter(b=>b.addedAt&&(now_gf-new Date(b.addedAt).getTime())<30*86400*1000);
   if(catFeatOnly)availFiltered=availFiltered.filter(b=>b.featured);
-  /* ⭐ Featured en tête, puis 🆕 nouveaux, puis le reste */
+  /* Critères avancés : catégorie, langue, disponibilité */
+  if(catCatSel)availFiltered=availFiltered.filter(b=>b.cat===catCatSel);
+  if(catLangSel)availFiltered=availFiltered.filter(b=>(b.lang||'')===catLangSel);
+  if(catAvailSel==='available')availFiltered=availFiltered.filter(b=>b.status==='available');
+  else if(catAvailSel==='borrowed')availFiltered=availFiltered.filter(b=>b.status==='borrowed');
+  /* ⭐ Featured en tête, puis 🆕 nouveaux, puis le reste (tri par défaut) */
   availFiltered.sort((a2,b2)=>{
     const fa=a2.featured?2:0,fb=b2.featured?2:0;
     const na=a2.addedAt&&(now_gf-new Date(a2.addedAt).getTime())<30*86400*1000?1:0;
@@ -1806,21 +1820,65 @@ function gFilt(){
   });
   const isQ=sf.t===sf.a&&sf.t===sf.c&&sf.t===sf.l;
   const priv=isPrivileged();
+  let result;
   if(isQ&&sf.t){
     const q=sf.t;
-    return availFiltered.filter(b=>{
+    result=availFiltered.filter(b=>{
       const fields=[b.titre,b.auteur,b.cat,b.lang];
       if(priv)fields.push(b.salle,b.placard,b.etagere,b.editeur,b.etat,b.ancienNouv,String(b.annee||''),String(b.expl||''),b.resume);
       return fields.some(v=>String(v||'').toLowerCase().includes(q));
     });
+  }else{
+    result=availFiltered.filter(b=>{
+      if(sf.t&&!b.titre.toLowerCase().includes(sf.t))return false;
+      if(sf.a&&!b.auteur.toLowerCase().includes(sf.a))return false;
+      if(sf.c&&!b.cat.toLowerCase().includes(sf.c))return false;
+      if(sf.l&&!(b.lang||'').toLowerCase().includes(sf.l))return false;
+      return true;
+    });
   }
-  return availFiltered.filter(b=>{
-    if(sf.t&&!b.titre.toLowerCase().includes(sf.t))return false;
-    if(sf.a&&!b.auteur.toLowerCase().includes(sf.a))return false;
-    if(sf.c&&!b.cat.toLowerCase().includes(sf.c))return false;
-    if(sf.l&&!(b.lang||'').toLowerCase().includes(sf.l))return false;
-    return true;
-  });
+  /* Tri explicite choisi par l'utilisateur (sinon : tri par défaut ci-dessus) */
+  if(catSortSel==='title')result.sort((a,b)=>(a.titre||'').localeCompare(b.titre||'','fr'));
+  else if(catSortSel==='author')result.sort((a,b)=>(a.auteur||'').localeCompare(b.auteur||'','fr'));
+  else if(catSortSel==='year')result.sort((a,b)=>(parseInt(b.annee)||0)-(parseInt(a.annee)||0));
+  else if(catSortSel==='recent')result.sort((a,b)=>String(b.addedAt||'').localeCompare(String(a.addedAt||'')));
+  return result;
+}
+
+/* Rendu des critères de sélection avancés (membre connecté uniquement) */
+function rCatFilters(){
+  const host=document.getElementById('cat-extra-filters');if(!host)return;
+  if(!curUser){host.innerHTML='';return;}
+  const acc=_catAccessibleBooks();
+  const cats=[...new Set(acc.map(b=>b.cat).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const langs=[...new Set(acc.map(b=>b.lang).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
+  /* Réinitialiser une sélection devenue invalide (ex : après changement d'onglet) */
+  if(catCatSel&&!cats.includes(catCatSel))catCatSel='';
+  if(catLangSel&&!langs.includes(catLangSel))catLangSel='';
+  const ea=s=>esc(s).replace(/"/g,'&quot;');
+  const ss='padding:7px 10px;border-radius:8px;border:1.5px solid var(--g200);background:white;color:var(--g600);font-size:13px;font-family:inherit;cursor:pointer';
+  const opt=(v,label,sel)=>`<option value="${ea(v)}"${v===sel?' selected':''}>${esc(label)}</option>`;
+  host.innerHTML=`
+    <select onchange="catCatSel=this.value;catPage=1;rCat(1)" style="${ss}" title="Filtrer par catégorie">
+      <option value="">📂 Toutes catégories</option>
+      ${cats.map(c=>opt(c,c,catCatSel)).join('')}
+    </select>
+    <select onchange="catLangSel=this.value;catPage=1;rCat(1)" style="${ss}" title="Filtrer par langue">
+      <option value="">🌐 Toutes langues</option>
+      ${langs.map(l=>opt(l,l,catLangSel)).join('')}
+    </select>
+    <select onchange="catAvailSel=this.value;catPage=1;rCat(1)" style="${ss}" title="Filtrer par disponibilité">
+      <option value="all"${catAvailSel==='all'?' selected':''}>📚 Tout statut</option>
+      <option value="available"${catAvailSel==='available'?' selected':''}>✅ Disponible</option>
+      <option value="borrowed"${catAvailSel==='borrowed'?' selected':''}>📕 Emprunté</option>
+    </select>
+    <select onchange="catSortSel=this.value;catPage=1;rCat(1)" style="${ss}" title="Trier">
+      <option value="default"${catSortSel==='default'?' selected':''}>↕️ Pertinence</option>
+      <option value="title"${catSortSel==='title'?' selected':''}>🔤 Titre A→Z</option>
+      <option value="author"${catSortSel==='author'?' selected':''}>✍️ Auteur A→Z</option>
+      <option value="year"${catSortSel==='year'?' selected':''}>📅 Année (récent)</option>
+      <option value="recent"${catSortSel==='recent'?' selected':''}>🆕 Ajout récent</option>
+    </select>`;
 }
 let catPage=1;
 const CAT_PER=12;
@@ -3312,6 +3370,7 @@ function shareAccess(id){
   msg+='Bienvenue a ' + libName + ' ! Votre compte a ete cree.\n\n';
   msg+='--- VOS ACCES ---\n';
   msg+='Code de connexion : ' + u.abbrev + '\n';
+  if(u.email)msg+='E-mail : ' + u.email + '\n';
   msg+='Role : ' + roleLabel + '\n\n';
   msg+='--- CE QUE VOUS POUVEZ FAIRE ---\n';
   caps.forEach(c=>{msg+=c.title+'\n'+c.desc+'\n\n';});
