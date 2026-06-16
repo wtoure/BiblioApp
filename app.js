@@ -25,11 +25,32 @@ function safe(v){return{__html:true,v:v??''}}
 ════════════════════════════════════════════════════════════ */
 const DEFAULT_SPACE = 'f9a0-60a0-5274';
 
-/* Détection SYNCHRONE du flux invitation / réinitialisation de mot de passe.
-   Supabase place le token dans le fragment (#access_token=…&type=invite|recovery).
-   On lit le hash AVANT que le SDK ne le consomme pour éviter la race condition
-   avec le bloc de restauration de session. */
-const _isRecoveryFlow = /[#&]type=(invite|recovery)/.test(window.location.hash)
+/* Capture SYNCHRONE des jetons d'invitation / réinitialisation, AVANT que le
+   SDK Supabase ne les consomme et n'efface le hash de l'URL.
+   Supabase utilise selon la config :
+     • flux implicite  : #access_token=…&refresh_token=…&type=invite|recovery
+     • flux token_hash : ?token_hash=…&type=invite|recovery
+     • flux PKCE       : ?code=…
+   On lit hash ET query pour couvrir tous les cas. */
+const _recoveryTokens = (function(){
+  const out = {};
+  const grab = (sp) => {
+    if(sp.get('access_token'))  out.access_token  = sp.get('access_token');
+    if(sp.get('refresh_token')) out.refresh_token = sp.get('refresh_token');
+    if(sp.get('token_hash'))    out.token_hash    = sp.get('token_hash');
+    if(sp.get('code'))          out.code          = sp.get('code');
+    if(sp.get('type'))          out.type          = sp.get('type');
+    if(sp.get('error'))         out.error         = sp.get('error_description') || sp.get('error');
+  };
+  try{ grab(new URLSearchParams(window.location.hash.replace(/^#/,''))); }catch(_){}
+  try{ grab(new URLSearchParams(window.location.search)); }catch(_){}
+  return out;
+})();
+
+/* Détection SYNCHRONE du flux invitation / réinitialisation de mot de passe. */
+const _isRecoveryFlow = !!(_recoveryTokens.access_token || _recoveryTokens.token_hash
+    || _recoveryTokens.type === 'invite' || _recoveryTokens.type === 'recovery'
+    || _recoveryTokens.error)
   || new URLSearchParams(window.location.search).get('setpw') === '1';
 
 /* Détection du mode et de l'espace depuis l'URL
@@ -101,6 +122,45 @@ function _initSb(){
       if(event==='PASSWORD_RECOVERY')openSetPwd();
     });
   }catch(_){}
+}
+
+/* ── Établit (ou rétablit) la session de récupération à partir des jetons
+   capturés au chargement. Idempotent pour le flux implicite (setSession avec
+   access/refresh peut être rappelé sans risque). Renvoie {ok, error?}. ── */
+async function _establishRecoverySession(){
+  _initSb();
+  /* Déjà une session active ? */
+  try{ const {data:{session}}=await sb.auth.getSession(); if(session)return {ok:true}; }catch(_){}
+  /* Lien expiré / déjà utilisé : erreur explicite renvoyée par Supabase. */
+  if(_recoveryTokens.error) return {ok:false,error:_recoveryTokens.error};
+  /* 1) Flux implicite — le plus fiable (jetons JWT, ré-applicables). */
+  if(_recoveryTokens.access_token && _recoveryTokens.refresh_token){
+    try{
+      const {error}=await sb.auth.setSession({
+        access_token:_recoveryTokens.access_token,
+        refresh_token:_recoveryTokens.refresh_token
+      });
+      if(!error){const {data:{session}}=await sb.auth.getSession();if(session)return {ok:true};}
+      else return {ok:false,error:error.message};
+    }catch(e){return {ok:false,error:e.message};}
+  }
+  /* 2) Flux token_hash — verifyOtp (jeton à usage unique). */
+  if(_recoveryTokens.token_hash){
+    try{
+      const {error}=await sb.auth.verifyOtp({token_hash:_recoveryTokens.token_hash,type:_recoveryTokens.type||'recovery'});
+      if(!error){const {data:{session}}=await sb.auth.getSession();if(session)return {ok:true};}
+      else return {ok:false,error:error.message};
+    }catch(e){return {ok:false,error:e.message};}
+  }
+  /* 3) Flux PKCE — exchangeCodeForSession (jeton à usage unique). */
+  if(_recoveryTokens.code){
+    try{
+      const {error}=await sb.auth.exchangeCodeForSession(_recoveryTokens.code);
+      if(!error){const {data:{session}}=await sb.auth.getSession();if(session)return {ok:true};}
+      else return {ok:false,error:error.message};
+    }catch(e){return {ok:false,error:e.message};}
+  }
+  return {ok:false,error:'Aucune session de récupération valide.'};
 }
 
 /* ── Mapping noms collections → tables Supabase ── */
@@ -613,18 +673,14 @@ async function loadAllData(){
     /* ── Lien d'invitation / réinitialisation → définir le mot de passe ── */
     if(_isRecoveryFlow){
       hideLoading();
-      /* Laisser onAuthStateChange (PASSWORD_RECOVERY) ouvrir la modale.
-         On attend brièvement pour lui laisser le temps de s'exécuter. */
-      await new Promise(r=>setTimeout(r,300));
-      /* Si la modale n'est pas encore là, on l'ouvre manuellement. */
-      if(!document.getElementById('_setpwd_modal')){
-        try{
-          const {data:{session:recSession}}=await sb.auth.getSession();
-          if(recSession){openSetPwd();return;}
-        }catch(_){}
-      } else {
-        return; /* modale déjà ouverte par onAuthStateChange */
+      const rec=await _establishRecoverySession();
+      if(rec.ok){
+        openSetPwd();
+        return;
       }
+      /* Session de récupération impossible (lien expiré/déjà utilisé). */
+      alert('Ce lien a expiré ou a déjà été utilisé. Demandez un nouveau lien depuis « Mot de passe oublié ? » ou à l\'administrateur.');
+      try{window.history.replaceState({},'',location.pathname);}catch(_){}
       sv('vl');return;
     }
 
@@ -1476,6 +1532,14 @@ async function submitSetPwd(){
   if(btn)btn.disabled=true;
   try{
     _initSb();
+    /* Garantir une session active : si elle a expiré/été perdue depuis
+       l'ouverture de la modale, la rétablir à partir des jetons capturés. */
+    let hasSession=false;
+    try{ const {data:{session}}=await sb.auth.getSession(); hasSession=!!session; }catch(_){}
+    if(!hasSession){
+      const rec=await _establishRecoverySession();
+      if(!rec.ok)throw new Error('Session expirée. Veuillez rouvrir le lien reçu par e-mail (ou en redemander un).');
+    }
     const {error}=await sb.auth.updateUser({password:p1});
     if(error)throw new Error(error.message);
     /* Nettoyer l'URL (token de récupération) */
