@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
+import { SPACE_ID, DEFAULT_SPACE, setStoredSpace, clearStoredSpace } from '@/lib/space'
 
 export function Login() {
   const { login } = useAuth()
@@ -9,6 +12,18 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showSwitch, setShowSwitch] = useState(false)
+  const [spaceCode, setSpaceCode] = useState('')
+
+  // Nom de la bibliothèque courante (pour l'afficher au lieu du code opaque).
+  const { data: space } = useQuery({
+    queryKey: ['space-name', SPACE_ID],
+    queryFn: async () => {
+      const { data } = await supabase.from('spaces').select('name').eq('code', SPACE_ID).maybeSingle()
+      return (data as { name?: string } | null)?.name ?? null
+    },
+    staleTime: 300_000,
+  })
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -25,6 +40,20 @@ export function Login() {
     }
   }
 
+  function switchSpace(e: FormEvent) {
+    e.preventDefault()
+    const code = spaceCode.trim().toLowerCase()
+    if (!code) return
+    setStoredSpace(code)
+    // Recharge sur /login pour que SPACE_ID se résolve sur la nouvelle biblio.
+    window.location.href = '/login'
+  }
+
+  function resetToDefault() {
+    clearStoredSpace()
+    window.location.href = '/login'
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-navy-dark via-navy to-comoe px-6">
       <div className="w-full max-w-sm rounded-3xl bg-white/[0.07] p-8 shadow-2xl backdrop-blur-xl ring-1 ring-white/10">
@@ -33,7 +62,7 @@ export function Login() {
           <h1 className="font-serif text-3xl font-bold text-white">
             Comoé<span className="text-comoe-light">Biblio</span>
           </h1>
-          <p className="mt-1 text-sm text-white/50">Bibliothèque du Centre Culturel Comoé</p>
+          <p className="mt-1 text-sm text-white/50">{space ?? 'Bibliothèque'}</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
@@ -75,6 +104,60 @@ export function Login() {
           <Link to="/forgot-password" className="text-sm text-white/60 underline-offset-2 hover:text-white hover:underline">
             Mot de passe oublié ?
           </Link>
+        </div>
+
+        {/* Changer de bibliothèque (multi-espaces) */}
+        <div className="mt-6 border-t border-white/10 pt-4">
+          {!showSwitch ? (
+            <button
+              type="button"
+              onClick={() => setShowSwitch(true)}
+              className="w-full text-center text-sm text-white/55 underline-offset-2 hover:text-white hover:underline"
+            >
+              🔄 Changer de bibliothèque
+            </button>
+          ) : (
+            <form onSubmit={switchSpace} className="space-y-2">
+              <label className="block text-sm font-medium text-white/70">
+                Code de la bibliothèque
+              </label>
+              <input
+                value={spaceCode}
+                onChange={(e) => setSpaceCode(e.target.value)}
+                autoCapitalize="none"
+                autoCorrect="off"
+                placeholder="ex. f9a0-60a0-5274"
+                className="w-full rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-white placeholder-white/40 focus:border-comoe-light focus:outline-none focus:ring-2 focus:ring-comoe/40"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 rounded-xl bg-white/15 py-2.5 text-sm font-semibold text-white active:scale-[.98]"
+                >
+                  Ouvrir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSwitch(false)}
+                  className="rounded-xl px-4 py-2.5 text-sm text-white/60"
+                >
+                  Annuler
+                </button>
+              </div>
+              {SPACE_ID !== DEFAULT_SPACE && (
+                <button
+                  type="button"
+                  onClick={resetToDefault}
+                  className="w-full pt-1 text-center text-xs text-white/40 hover:text-white/70"
+                >
+                  Revenir à la bibliothèque par défaut
+                </button>
+              )}
+              <p className="pt-1 text-center text-[11px] text-white/35">
+                Le code vous est communiqué par l'administrateur de la bibliothèque.
+              </p>
+            </form>
+          )}
         </div>
       </div>
       <p className="mt-6 text-xs text-white/30">Version mobile · v2</p>

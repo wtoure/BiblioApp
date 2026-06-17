@@ -23,19 +23,55 @@ const APP_ROUTES = new Set([
   'proposer',
 ])
 
+const STORAGE_KEY = 'cb_space'
+
+/** Bibliothèque mémorisée (choisie par l'utilisateur ou héritée d'un lien). */
+export function getStoredSpace(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+export function setStoredSpace(code: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, code.trim().toLowerCase())
+  } catch {
+    /* localStorage indisponible — ignoré */
+  }
+}
+export function clearStoredSpace(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* ignoré */
+  }
+}
+
+/** Code d'espace explicitement présent dans l'URL (sinon null). */
+export function explicitUrlSpace(pathname: string = window.location.pathname): string | null {
+  const parts = pathname.split('/').filter(Boolean)
+  if (parts[0] === 'book') return parts[1] ? decodeURIComponent(parts[1]).toLowerCase() : null
+  if (parts.length > 0 && !APP_ROUTES.has(parts[0].toLowerCase()))
+    return decodeURIComponent(parts[0]).toLowerCase()
+  return null
+}
+
 /**
- * Résout le code de l'espace (bibliothèque) depuis l'URL.
- *   /                       → DEFAULT_SPACE
- *   /login, /catalogue, …   → DEFAULT_SPACE (routes internes de l'app)
- *   /book/:code             → code (vue publique)
- * Replié sur DEFAULT_SPACE en local ou si absent.
+ * Résout le code de l'espace (bibliothèque) :
+ *   /book/:code  ou  /:code  → code explicite (et mémorisé)
+ *   /login, /catalogue, /, … → bibliothèque mémorisée, sinon DEFAULT_SPACE
+ * Permet de gérer plusieurs bibliothèques : la dernière choisie/visitée est
+ * conservée pour les visites suivantes (multi-espaces).
  */
 export function resolveSpaceId(pathname: string = window.location.pathname): string {
-  const parts = pathname.split('/').filter(Boolean)
-  if (parts.length === 0) return DEFAULT_SPACE
-  if (parts[0] === 'book') return parts[1] ? decodeURIComponent(parts[1]).toLowerCase() : DEFAULT_SPACE
-  if (APP_ROUTES.has(parts[0].toLowerCase())) return DEFAULT_SPACE
-  return decodeURIComponent(parts[0]).toLowerCase()
+  const explicit = explicitUrlSpace(pathname)
+  if (explicit) return explicit
+  return getStoredSpace() || DEFAULT_SPACE
 }
+
+// Si l'URL porte un code explicite, on le mémorise pour les prochaines visites.
+const _explicit = explicitUrlSpace()
+if (_explicit) setStoredSpace(_explicit)
 
 export const SPACE_ID = resolveSpaceId()

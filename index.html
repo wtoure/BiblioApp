@@ -662,6 +662,11 @@
           <input type="url" class="fi fi-l" id="adm-short-link" placeholder="Ex : https://bit.ly/comoe-biblio"/>
           <p style="font-size:11px;color:var(--g400);margin-top:4px">Si renseigné, ce lien sera utilisé dans les messages de partage des accès WhatsApp au lieu du lien complet</p>
         </div>
+        <div class="fg" style="margin-top:10px">
+          <label class="ld">⭐ Durée d'affichage des livres mis en avant <span style="font-size:11px;color:var(--g400)">(en jours, en tête du catalogue)</span></label>
+          <input type="number" min="0" class="fi fi-l" id="adm-featured-days" placeholder="0 = illimité" style="max-width:160px"/>
+          <p style="font-size:11px;color:var(--g400);margin-top:4px">Un livre « mis en avant » reste en début de liste pendant ce nombre de jours après son ajout. 0 (ou vide) = toujours affiché en tête.</p>
+        </div>
         <button type="button" class="btn bn btn-sm" style="margin-top:12px" onclick="saveContact()">💾 Enregistrer</button>
         <p id="adm-contact-msg" style="font-size:12px;color:#16a34a;margin-top:8px;min-height:16px"></p>
       </div>

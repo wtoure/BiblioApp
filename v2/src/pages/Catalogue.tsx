@@ -4,8 +4,23 @@ import { PageHeader } from '@/components/PageHeader'
 import { SectionPicker, type Section } from '@/components/SectionPicker'
 import { BookCard } from '@/components/BookCard'
 import { useBooks } from '@/features/catalogue/useBooks'
+import { useConfig } from '@/features/config/useConfig'
 import { useAuth } from '@/lib/auth'
-import type { CatType } from '@/lib/types'
+import type { Book, CatType } from '@/lib/types'
+
+type SortKey = 'default' | 'title' | 'author' | 'year' | 'recent'
+
+/** Un livre mis en avant est-il encore « actif » (épinglé en tête) ? */
+function isFeaturedActive(b: Book, featuredDays: number): boolean {
+  if (!b.featured) return false
+  if (featuredDays <= 0) return true
+  const ref = b.addedAt
+  if (!ref) return true
+  return Date.now() - new Date(ref).getTime() < featuredDays * 86400 * 1000
+}
+
+const isNew = (b: Book) =>
+  !!b.addedAt && Date.now() - new Date(b.addedAt).getTime() < 30 * 86400 * 1000
 
 const SECTIONS: Section[] = [
   { key: 'all', label: 'Tous les catalogues' },
@@ -20,10 +35,15 @@ export function Catalogue() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const { data: books, isLoading, error } = useBooks()
+  const { data: config } = useConfig()
+  const featuredDays = Math.max(0, Number(config?.featuredDays) || 0)
   const [section, setSection] = useState('all')
   const [q, setQ] = useState('')
   const [lang, setLang] = useState('')
   const [salle, setSalle] = useState('')
+  const [cat, setCat] = useState('')
+  const [avail, setAvail] = useState('')
+  const [sort, setSort] = useState<SortKey>('default')
   const [newOnly, setNewOnly] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
 
@@ -39,19 +59,26 @@ export function Catalogue() {
   )
 
   // Options de filtres dérivées des livres visibles (triées)
-  const { langs, salles } = useMemo(() => {
+  const { langs, salles, cats } = useMemo(() => {
     const base = (books ?? []).filter((b) => canSpiritual || b.catType !== 'spirituel')
     const uniq = (xs: (string | undefined)[]) =>
       [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'fr'))
-    return { langs: uniq(base.map((b) => b.lang)), salles: uniq(base.map((b) => b.salle)) }
+    return {
+      langs: uniq(base.map((b) => b.lang)),
+      salles: uniq(base.map((b) => b.salle)),
+      cats: uniq(base.map((b) => b.cat)),
+    }
   }, [books, canSpiritual])
 
   const filtered = useMemo(() => {
-    let list = books ?? []
+    let list = (books ?? []).filter((b) => b.status !== 'retired')
     if (!canSpiritual) list = list.filter((b) => b.catType !== 'spirituel')
     if (section !== 'all') list = list.filter((b) => b.catType === (section as CatType))
     if (lang) list = list.filter((b) => b.lang === lang)
     if (salle) list = list.filter((b) => b.salle === salle)
+    if (cat) list = list.filter((b) => b.cat === cat)
+    if (avail === 'available') list = list.filter((b) => b.status === 'available')
+    else if (avail === 'borrowed') list = list.filter((b) => b.status === 'borrowed')
     if (newOnly) list = list.filter((b) => b.ancienNouv === 'Nouveau')
     const term = q.trim().toLowerCase()
     if (term)
@@ -59,16 +86,31 @@ export function Catalogue() {
         (b) =>
           b.titre?.toLowerCase().includes(term) || b.auteur?.toLowerCase().includes(term),
       )
-    return list
-  }, [books, section, q, lang, salle, newOnly, canSpiritual])
+    // Tri
+    const sorted = [...list]
+    if (sort === 'title') sorted.sort((a, b) => (a.titre || '').localeCompare(b.titre || '', 'fr'))
+    else if (sort === 'author') sorted.sort((a, b) => (a.auteur || '').localeCompare(b.auteur || '', 'fr'))
+    else if (sort === 'year') sorted.sort((a, b) => (Number(b.annee) || 0) - (Number(a.annee) || 0))
+    else if (sort === 'recent')
+      sorted.sort((a, b) => String(b.addedAt || '').localeCompare(String(a.addedAt || '')))
+    else
+      // Défaut : ⭐ mis en avant (actifs) puis 🆕 nouveautés en tête
+      sorted.sort((a, b) => {
+        const sa = (isFeaturedActive(a, featuredDays) ? 2 : 0) + (isNew(a) ? 1 : 0)
+        const sb = (isFeaturedActive(b, featuredDays) ? 2 : 0) + (isNew(b) ? 1 : 0)
+        return sb - sa
+      })
+    return sorted
+  }, [books, section, q, lang, salle, cat, avail, newOnly, sort, canSpiritual, featuredDays])
 
-  const activeFilters = (lang ? 1 : 0) + (salle ? 1 : 0) + (newOnly ? 1 : 0)
+  const activeFilters =
+    (lang ? 1 : 0) + (salle ? 1 : 0) + (cat ? 1 : 0) + (avail ? 1 : 0) + (newOnly ? 1 : 0)
 
   // Réinitialise le rendu incrémental dès qu'un filtre change.
   const [limit, setLimit] = useState(PAGE)
   useEffect(() => {
     setLimit(PAGE)
-  }, [section, q, lang, salle, newOnly, canSpiritual])
+  }, [section, q, lang, salle, cat, avail, newOnly, sort, canSpiritual])
 
   const visible = filtered.slice(0, limit)
   const remaining = filtered.length - visible.length
@@ -104,6 +146,8 @@ export function Catalogue() {
               onClick={() => {
                 setLang('')
                 setSalle('')
+                setCat('')
+                setAvail('')
                 setNewOnly(false)
               }}
               className="text-sm font-medium text-slate-500 underline"
@@ -116,8 +160,35 @@ export function Catalogue() {
         {showFilters && (
           <div className="mb-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 shadow-card">
             <div className="grid grid-cols-2 gap-2">
+              <FilterSelect label="Catégorie" value={cat} onChange={setCat} options={cats} />
               <FilterSelect label="Langue" value={lang} onChange={setLang} options={langs} />
               <FilterSelect label="Salle" value={salle} onChange={setSalle} options={salles} />
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-500">Disponibilité</span>
+                <select
+                  value={avail}
+                  onChange={(e) => setAvail(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[15px] focus:border-navy focus:outline-none"
+                >
+                  <option value="">Tout statut</option>
+                  <option value="available">Disponible</option>
+                  <option value="borrowed">Emprunté</option>
+                </select>
+              </label>
+              <label className="col-span-2 block">
+                <span className="mb-1 block text-xs font-medium text-slate-500">Trier par</span>
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortKey)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[15px] focus:border-navy focus:outline-none"
+                >
+                  <option value="default">Pertinence (mis en avant, nouveautés)</option>
+                  <option value="title">Titre A→Z</option>
+                  <option value="author">Auteur A→Z</option>
+                  <option value="year">Année (récent)</option>
+                  <option value="recent">Ajout récent</option>
+                </select>
+              </label>
             </div>
             <label className="flex items-center gap-2 px-1 py-1 text-[15px] text-slate-700">
               <input

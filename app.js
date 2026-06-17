@@ -345,11 +345,12 @@ async function saveContact(){
   const time=document.getElementById('adm-meeting-time')?.value.trim()||'';
   const countryCode=document.getElementById('adm-country-code')?.value.trim()||'';
   const shortLink=document.getElementById('adm-short-link')?.value.trim()||'';
+  const featuredDays=Math.max(0,parseInt(document.getElementById('adm-featured-days')?.value)||0);
   cfg.contact=num;cfg.contactName=name;cfg.meetingPlace=place;cfg.meetingTime=time;
-  cfg.countryCode=countryCode;cfg.shortLink=shortLink;
+  cfg.countryCode=countryCode;cfg.shortLink=shortLink;cfg.featuredDays=featuredDays;
   const msg=document.getElementById('adm-contact-msg');
   try{
-    await sbUpd('config','main',{contact:num,contactName:name,meetingPlace:place,meetingTime:time,countryCode:countryCode,shortLink});
+    await sbUpd('config','main',{contact:num,contactName:name,meetingPlace:place,meetingTime:time,countryCode:countryCode,shortLink,featuredDays});
     _cachePut({config:cfg});
     if(msg){msg.style.color='#16a34a';msg.textContent='✅ Enregistré';setTimeout(()=>{if(msg)msg.textContent='';},3000);}
   }catch(e){if(msg){msg.style.color='#dc2626';msg.textContent='Erreur : '+e.message;}}
@@ -1678,6 +1679,7 @@ function showAdm(){
     const admMeetTimeEl=document.getElementById('adm-meeting-time');if(admMeetTimeEl)admMeetTimeEl.value=cfg.meetingTime||'';
     const admCountryEl=document.getElementById('adm-country-code');if(admCountryEl)admCountryEl.value=cfg.countryCode||'';
     const admShortLinkEl=document.getElementById('adm-short-link');if(admShortLinkEl)admShortLinkEl.value=cfg.shortLink||'';
+    const admFeatDaysEl=document.getElementById('adm-featured-days');if(admFeatDaysEl)admFeatDaysEl.value=cfg.featuredDays||'';
     updPDFBtn();
   }
   /* ── Réinitialiser tous les filtres du catalogue pour ce nouvel utilisateur ── */
@@ -1787,6 +1789,18 @@ let catNewOnly=false,catFeatOnly=false;
 /* Critères de sélection avancés (membre connecté) */
 let catCatSel='',catLangSel='',catAvailSel='all',catSortSel='default';
 
+/* Un livre est-il « mis en avant » ACTIF (épinglé en tête de catalogue) ?
+   cfg.featuredDays = durée d'affichage en jours (0 ou vide = illimité).
+   Référence : featuredAt si présent, sinon addedAt (date d'ajout). */
+function _isFeaturedActive(b){
+  if(!b||!b.featured)return false;
+  const days=parseInt(cfg.featuredDays)||0;
+  if(days<=0)return true;
+  const ref=b.featuredAt||b.addedAt;
+  if(!ref)return true;
+  return (Date.now()-new Date(ref).getTime())<days*86400*1000;
+}
+
 /* Livres accessibles à l'utilisateur courant (droits catalogue + onglet catType),
    hors livres retirés. Source unique pour gFilt() et les listes déroulantes. */
 function _catAccessibleBooks(){
@@ -1819,9 +1833,9 @@ function gFilt(){
   if(catLangSel)availFiltered=availFiltered.filter(b=>(b.lang||'')===catLangSel);
   if(catAvailSel==='available')availFiltered=availFiltered.filter(b=>b.status==='available');
   else if(catAvailSel==='borrowed')availFiltered=availFiltered.filter(b=>b.status==='borrowed');
-  /* ⭐ Featured en tête, puis 🆕 nouveaux, puis le reste (tri par défaut) */
+  /* ⭐ Featured en tête (selon durée d'affichage), puis 🆕 nouveaux, puis le reste */
   availFiltered.sort((a2,b2)=>{
-    const fa=a2.featured?2:0,fb=b2.featured?2:0;
+    const fa=_isFeaturedActive(a2)?2:0,fb=_isFeaturedActive(b2)?2:0;
     const na=a2.addedAt&&(now_gf-new Date(a2.addedAt).getTime())<30*86400*1000?1:0;
     const nb2=b2.addedAt&&(now_gf-new Date(b2.addedAt).getTime())<30*86400*1000?1:0;
     return(fb+nb2)-(fa+na);
@@ -3396,9 +3410,11 @@ function shareAccess(id){
     msg+='(saisissez votre e-mail, vous recevrez un lien).\n\n';
   }else{
     msg+='Pour activer votre acces, communiquez d abord une adresse\n';
-    msg+='e-mail a l administrateur : elle servira a creer votre\n';
-    msg+='connexion (e-mail + mot de passe). Vous recevrez ensuite un\n';
-    msg+='lien pour definir votre mot de passe.\n\n';
+    msg+='e-mail a l administrateur (elle servira a creer votre\n';
+    msg+='connexion). Ensuite :\n';
+    msg+='1. Ouvrez ce lien : ' + appUrl + '\n';
+    msg+='2. Definissez votre mot de passe ici :\n' + resetUrl + '\n';
+    msg+='(saisissez votre e-mail, vous recevrez un lien).\n\n';
   }
   msg+='L application fonctionne sur telephone ET sur ordinateur.\n\n';
   msg+='A bientot a ' + libName + ' !';

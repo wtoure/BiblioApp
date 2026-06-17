@@ -77,6 +77,8 @@ export interface SpaceConfig {
   countryCode?: string | null
   shortLink?: string | null
   loanOpen?: boolean
+  /** Durée (jours) d'affichage des livres mis en avant en tête de catalogue. 0/absent = illimité. */
+  featuredDays?: number | null
 }
 
 export interface ShelfCheck {

@@ -809,6 +809,7 @@ function ParametresSection() {
       countryCode: effective.countryCode ?? '+225',
       shortLink: effective.shortLink ?? null,
       loanOpen: effective.loanOpen ?? false,
+      featuredDays: Math.max(0, Number(effective.featuredDays) || 0),
       catAccess: effectiveCatAccess,
     }
     const { error } = await supabase
@@ -856,6 +857,27 @@ function ParametresSection() {
           <span className="mb-1 block text-xs font-medium text-slate-500">Lien court (partage)</span>
           <input value={effective.shortLink ?? ''} onChange={setField('shortLink')}
             className="field-input" placeholder="ex. comoe.link/biblio" />
+        </label>
+      </div>
+
+      {/* Catalogue */}
+      <div className="rounded-2xl bg-white p-4 shadow-card space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">Catalogue</h3>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-500">
+            ⭐ Durée d'affichage des livres mis en avant (jours)
+          </span>
+          <input
+            type="number"
+            min={0}
+            value={effective.featuredDays ?? ''}
+            onChange={(e) => setForm((prev) => ({ ...prev, featuredDays: e.target.value === '' ? 0 : Number(e.target.value) }))}
+            className="field-input"
+            placeholder="0 = illimité"
+          />
+          <span className="mt-1 block text-[11px] text-slate-400">
+            Un livre mis en avant reste en tête du catalogue pendant ce nombre de jours après son ajout. 0 (ou vide) = toujours.
+          </span>
         </label>
       </div>
 
