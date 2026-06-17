@@ -670,6 +670,14 @@ async function loadAllData(){
       return;
     }
 
+    /* ── Si ?forgot=1 : lien de réinitialisation partagé (ex. WhatsApp) → ouvrir la demande ── */
+    if(new URLSearchParams(window.location.search).get('forgot')==='1'){
+      window.history.replaceState({},'',window.location.pathname);
+      sv('vl');
+      setTimeout(()=>{try{openForgotPwd();}catch(_){}}, 300);
+      return;
+    }
+
     /* ── Lien d'invitation / réinitialisation → définir le mot de passe ── */
     if(_isRecoveryFlow){
       hideLoading();
@@ -3365,21 +3373,34 @@ function shareAccess(id){
   const caps=_userCapabilities(u);
   const libName=(SPACE&&SPACE.name)||'la bibliothèque';
 
+  /* Lien direct vers la réinitialisation/définition du mot de passe (canonique,
+     pour garantir que le paramètre ?forgot=1 fonctionne même si shortLink est défini). */
+  const resetUrl=window.location.origin+'/'+SPACE_ID+'?forgot=1';
+
   /* Message sans caractères problematiques pour WhatsApp (pas de keycap U+20E3, pas d'emoji rares) */
   let msg='Bonjour ' + u.prenom + ' !\n\n';
   msg+='Bienvenue a ' + libName + ' ! Votre compte a ete cree.\n\n';
   msg+='--- VOS ACCES ---\n';
-  msg+='Code de connexion : ' + u.abbrev + '\n';
-  if(u.email)msg+='E-mail : ' + u.email + '\n';
+  msg+='Votre code membre : ' + u.abbrev + '\n';
+  if(u.email)msg+='E-mail (pour se connecter) : ' + u.email + '\n';
   msg+='Role : ' + roleLabel + '\n\n';
   msg+='--- CE QUE VOUS POUVEZ FAIRE ---\n';
   caps.forEach(c=>{msg+=c.title+'\n'+c.desc+'\n\n';});
   msg+='--- COMMENT SE CONNECTER ---\n';
-  msg+='1. Ouvrez ce lien sur telephone ou ordinateur :\n' + appUrl + '\n';
-  msg+='2. Saisissez votre code : ' + u.abbrev + '\n';
-  msg+='3. C\'est tout, vous etes connecte !\n\n';
-  msg+='L\'application fonctionne sur telephone ET sur ordinateur.\n';
-  msg+='Pas besoin de mot de passe, votre code suffit. Conservez-le.\n\n';
+  if(u.email){
+    msg+='1. Ouvrez ce lien (telephone ou ordinateur) :\n' + appUrl + '\n';
+    msg+='2. E-mail : ' + u.email + '\n';
+    msg+='3. Mot de passe : celui qui vous a ete communique.\n\n';
+    msg+='Premiere connexion ou mot de passe oublie ?\n';
+    msg+='Definissez votre mot de passe ici :\n' + resetUrl + '\n';
+    msg+='(saisissez votre e-mail, vous recevrez un lien).\n\n';
+  }else{
+    msg+='Pour activer votre acces, communiquez d abord une adresse\n';
+    msg+='e-mail a l administrateur : elle servira a creer votre\n';
+    msg+='connexion (e-mail + mot de passe). Vous recevrez ensuite un\n';
+    msg+='lien pour definir votre mot de passe.\n\n';
+  }
+  msg+='L application fonctionne sur telephone ET sur ordinateur.\n\n';
   msg+='A bientot a ' + libName + ' !';
 
   const wa=u.whatsapp.replace(/[^0-9+]/g,'').replace(/^\+/,'');
