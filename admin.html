@@ -308,6 +308,23 @@
 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><input type="color" id="e-color" style="width:44px;height:44px;border-radius:10px;border:2px solid rgba(255,255,255,.2);cursor:pointer;padding:2px;background:transparent;flex-shrink:0" oninput="updateColorPreview('e-color')" title="Couleur personnalisée"/><button type="button" onclick="pickColor('e-color','#22806B')" title="Vert" style="width:32px;height:32px;border-radius:8px;background:#22806B;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#1C4370')" title="Marine" style="width:32px;height:32px;border-radius:8px;background:#1C4370;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#6366f1')" title="Indigo" style="width:32px;height:32px;border-radius:8px;background:#6366f1;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#8b5cf6')" title="Violet" style="width:32px;height:32px;border-radius:8px;background:#8b5cf6;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#be185d')" title="Rose" style="width:32px;height:32px;border-radius:8px;background:#be185d;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#0891b2')" title="Cyan" style="width:32px;height:32px;border-radius:8px;background:#0891b2;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#d97706')" title="Orange" style="width:32px;height:32px;border-radius:8px;background:#d97706;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#059669')" title="Émeraude" style="width:32px;height:32px;border-radius:8px;background:#059669;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#dc2626')" title="Rouge" style="width:32px;height:32px;border-radius:8px;background:#dc2626;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><button type="button" onclick="pickColor('e-color','#0f172a')" title="Noir" style="width:32px;height:32px;border-radius:8px;background:#0f172a;border:2px solid rgba(255,255,255,.15);cursor:pointer;transition:all .2s;flex-shrink:0;position:relative" onmouseover="this.style.transform='scale(1.15)'" onmouseout="this.style.transform='scale(1)'"></button><span id="e-color-preview" style="font-size:12px;color:var(--muted);margin-left:4px"></span></div>
         </div>
       </div>
+      <div class="fg" style="border-top:1px solid var(--border);padding-top:14px;margin-top:8px">
+        <label>👤 E-mail administrateur</label>
+        <input class="fi" id="e-adm-email" type="email" placeholder="admin@exemple.com" autocapitalize="none" spellcheck="false"/>
+        <p class="note">E-mail de connexion de l'admin de cette bibliothèque</p>
+      </div>
+      <div class="fg">
+        <label>🔑 Code administrateur</label>
+        <input class="fi" id="e-adm-code" placeholder="admin…" autocapitalize="none" spellcheck="false" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')"/>
+      </div>
+      <div class="fg">
+        <label>🔒 Nouveau mot de passe admin <span style="color:var(--muted);font-weight:400">(optionnel)</span></label>
+        <input class="fi" id="e-adm-pwd" type="text" placeholder="Laisser vide pour ne pas changer (8 car. min.)" autocapitalize="none" spellcheck="false"/>
+        <p class="note">Si renseigné : (re)crée le compte de connexion pour cet e-mail</p>
+      </div>
+      <div class="fg">
+        <button type="button" class="btn-g" style="width:100%;color:#4ade80;border-color:rgba(74,222,128,.3)" onclick="shareSpaceLinks(document.getElementById('e-code').value)">📲 Partager les liens & accès (WhatsApp)</button>
+      </div>
       <p id="e-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
     </div>
     <div class="mft">
@@ -341,6 +358,8 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 let sb=null;
 function _sb(){if(!sb)sb=supabase.createClient(SB_URL,SB_KEY);return sb;}
 const SA_DEFAULT_HASH='f0d69d50df9d46dbb367d8ab8265d051e4e15cd15277230b5c8cd0b0aba18fca';
+/* Base de l'app mobile v2 (Vercel) — pour les liens publics/connexion mobiles */
+const V2_BASE='https://biblioapp-center.vercel.app';
 
 /* Supabase helpers */
 async function sbQ(table,filters={}){
@@ -482,24 +501,28 @@ async function loadSpaces(){
     window._spacesCache=all;
     const counts={};
     const adminCodes={};
+    const adminEmails={};
     await Promise.all(all.map(async s=>{
       try{
         const[bRes,rRes,uRes]=await Promise.all([
           _sb().from('books').select('*',{count:'exact',head:true}).eq('space_code',s.code),
           _sb().from('book_requests').select('*',{count:'exact',head:true}).eq('space_code',s.code).eq('status','pending'),
-          _sb().from('users').select('abbrev').eq('space_code',s.code).eq('id',1).maybeSingle()
+          _sb().from('users').select('abbrev,email').eq('space_code',s.code).eq('id',1).maybeSingle()
         ]);
         const bookCount=bRes.count||0;
         const hasRequests=(rRes.count||0)>0;
         counts[s.code]={bookCount,hasRequests,canDelete:bookCount<5&&!hasRequests};
         adminCodes[s.code]=uRes.data?.abbrev||'N/A';
+        adminEmails[s.code]=uRes.data?.email||'';
       }catch(e){
         counts[s.code]={bookCount:0,hasRequests:false,canDelete:true};
         adminCodes[s.code]='N/A';
+        adminEmails[s.code]='';
       }
     }));
     window._spacesCounts=counts;
     window._adminCodes=adminCodes;
+    window._adminEmails=adminEmails;
     const act=all.filter(s=>s.active!==false).length;
     const ina=all.length-act;
     const u=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
@@ -559,8 +582,29 @@ function openEdit(s){
   document.getElementById('e-tag').value=s.tagline||'';
   document.getElementById('e-color').value=s.color||'#22806B';
   setTimeout(()=>updateColorPreview('e-color'),50);
+  const emEl=document.getElementById('e-adm-email');if(emEl)emEl.value=(window._adminEmails||{})[s.code]||'';
+  const cdEl=document.getElementById('e-adm-code');if(cdEl)cdEl.value=((window._adminCodes||{})[s.code]||'').replace(/^N\/A$/,'');
+  const pwEl=document.getElementById('e-adm-pwd');if(pwEl)pwEl.value='';
   document.getElementById('e-err').textContent='';
   openM('m-edit');
+}
+
+/* Construit et ouvre WhatsApp avec les liens (desktop + mobile) et l'e-mail admin */
+function shareSpaceLinks(code){
+  if(!code)return;
+  const s=(window._spacesCache||[]).find(x=>x.code===code)||{};
+  const em=(document.getElementById('e-adm-email')?.value||'').trim().toLowerCase()||(window._adminEmails||{})[code]||'';
+  const dOrigin=window.location.origin;
+  const name=s.name||s.short||code;
+  let m='Acces a la bibliotheque "'+name+'"\n\n';
+  if(em)m+='E-mail de connexion (admin) : '+em+'\n\n';
+  m+='--- APPLICATION MOBILE ---\n';
+  m+='Connexion : '+V2_BASE+'/'+code+'\n';
+  m+='Catalogue public : '+V2_BASE+'/book/'+code+'\n\n';
+  m+='--- VERSION ORDINATEUR ---\n';
+  m+='Connexion : '+dOrigin+'/'+code+'\n';
+  m+='Catalogue public : '+dOrigin+'/book/'+code+'\n';
+  window.open('https://wa.me/?text='+encodeURIComponent(m),'_blank');
 }
 
 /* Sauvegarder les modifications */
@@ -570,14 +614,44 @@ async function saveEdit(){
   const short=document.getElementById('e-short').value.trim();
   const tag=document.getElementById('e-tag').value.trim();
   const color=document.getElementById('e-color').value;
+  const admEmail=(document.getElementById('e-adm-email')?.value||'').trim().toLowerCase();
+  const admCode=(document.getElementById('e-adm-code')?.value||'').trim().toLowerCase();
+  const admPwd=(document.getElementById('e-adm-pwd')?.value||'');
   const errEl=document.getElementById('e-err');
   const btn=document.getElementById('e-btn');
   if(!name||!short){errEl.textContent='Nom complet et nom court sont obligatoires.';return;}
+  if(admEmail&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(admEmail)){errEl.textContent='E-mail admin invalide.';return;}
+  if(admPwd&&admPwd.length<8){errEl.textContent='Mot de passe admin : 8 caractères minimum.';return;}
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>Enregistrement…';
   try{
     await sbUpd('spaces',{code},{name,short,tagline:tag||name,color});
+    /* Mettre à jour l'admin (id=1) de cet espace : e-mail + code */
+    const admPatch={};
+    if(admEmail)admPatch.email=admEmail;
+    if(admCode)admPatch.abbrev=admCode;
+    if(Object.keys(admPatch).length)await sbUpd('users',{space_code:code,id:1},admPatch);
+    /* (Re)créer le compte de connexion si un mot de passe est fourni */
+    let authNote='';
+    if(admPwd&&admEmail){
+      try{
+        const {error:suErr}=await _sb().auth.signUp({email:admEmail,password:admPwd});
+        if(suErr){
+          const mm=(suErr.message||'').toLowerCase();
+          authNote=(mm.includes('already')||mm.includes('registered'))
+            ? '\n\n⚠️ Cet e-mail a déjà un compte : le mot de passe saisi est ignoré (utilisez l\'existant).'
+            : '\n\n⚠️ Compte non créé : '+suErr.message;
+        }
+        await _sb().auth.signOut().catch(()=>{});
+      }catch(e){authNote='\n\n⚠️ Compte non créé : '+e.message;}
+    }
+    /* E-mail changé sans mot de passe → le compte Auth garde l'ancien e-mail */
+    const prevEmail=(window._adminEmails||{})[code]||'';
+    if(admEmail&&admEmail!==prevEmail&&!admPwd){
+      authNote+='\n\n⚠️ E-mail modifié sans mot de passe : définissez aussi un mot de passe pour activer la connexion avec ce nouvel e-mail.';
+    }
     cM('m-edit');
     loadSpaces();
+    if(authNote)alert('Enregistré.'+authNote);
   }catch(e){errEl.textContent='Erreur : '+e.message;}
   finally{btn.disabled=false;btn.textContent='💾 Enregistrer';}
 }
@@ -731,9 +805,10 @@ async function createSpace(){
     /* 1. Espace */
     await sbIns('spaces',{code,name,short,tagline:tag||name,color,active:true});
 
-    /* 2. Config */
+    /* 2. Config — shortLink pré-rempli avec le lien de connexion mobile (v2) */
     await sbIns('space_config',{
       space_code:code,openAll:false,openUntil:null,propMotif:'',currentSessionId:null,logoB64:null,loanOpen:false,
+      shortLink:V2_BASE+'/'+code,
       pdfFields:['num','titre','auteur','desc','demandeur'],
       catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}
     });
