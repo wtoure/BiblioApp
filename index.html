@@ -125,7 +125,17 @@
               <label class="sa-label">Code admin initial <span style="color:#f87171">*</span></label>
               <input class="sa-fi" id="sa-new-admin-code" placeholder="admin, directeur…" autocapitalize="none" spellcheck="false"
                 oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')"/>
-              <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">Code de connexion du premier administrateur</p>
+              <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">Identifiant interne du premier administrateur</p>
+            </div>
+            <div class="sa-fg">
+              <label class="sa-label">E-mail admin <span style="color:#f87171">*</span></label>
+              <input class="sa-fi" id="sa-new-admin-email" type="email" placeholder="admin@exemple.com" autocapitalize="none" spellcheck="false"/>
+              <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">Servira à se connecter à la bibliothèque (e-mail + mot de passe)</p>
+            </div>
+            <div class="sa-fg">
+              <label class="sa-label">Mot de passe admin <span style="color:#f87171">*</span></label>
+              <input class="sa-fi" id="sa-new-admin-pwd" type="text" placeholder="8 caractères minimum" autocapitalize="none" spellcheck="false"/>
+              <p style="font-size:11px;color:rgba(255,255,255,.3);margin-top:4px">À communiquer à l'administrateur (il pourra le changer ensuite)</p>
             </div>
             <div class="sa-fg">
               <label class="sa-label">Couleur d'accent</label>

@@ -6122,7 +6122,7 @@ async function saLoadSpaces(){
 }
 
 function saClearCreate(){
-  ['sa-new-name','sa-new-short','sa-new-tag','sa-new-admin-code'].forEach(id=>{
+  ['sa-new-name','sa-new-short','sa-new-tag','sa-new-admin-code','sa-new-admin-email','sa-new-admin-pwd'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
   /* Régénérer un code opaque après chaque effacement */
@@ -6139,12 +6139,16 @@ async function saCreateSpace(){
   const tag     =document.getElementById('sa-new-tag').value.trim();
   const color   =document.getElementById('sa-new-color').value;
   const admCode =document.getElementById('sa-new-admin-code').value.trim().toLowerCase();
+  const admEmail=(document.getElementById('sa-new-admin-email')?.value||'').trim().toLowerCase();
+  const admPwd  =document.getElementById('sa-new-admin-pwd')?.value||'';
   const errEl   =document.getElementById('sa-create-err');
   const sucEl   =document.getElementById('sa-create-success');
   const btn     =document.getElementById('sa-create-btn');
-  if(!code||!name||!short||!admCode){errEl.textContent='Tous les champs * sont obligatoires.';return;}
+  if(!code||!name||!short||!admCode||!admEmail||!admPwd){errEl.textContent='Tous les champs * sont obligatoires.';return;}
   if(!/^[a-z0-9-]+$/.test(code)){errEl.textContent='Code invalide (minuscules, chiffres, tirets uniquement).';return;}
   if(!/^[a-z0-9]+$/.test(admCode)){errEl.textContent='Code admin invalide (lettres minuscules et chiffres uniquement).';return;}
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(admEmail)){errEl.textContent='E-mail admin invalide.';return;}
+  if(admPwd.length<8){errEl.textContent='Mot de passe admin : 8 caractères minimum.';return;}
   errEl.textContent='';sucEl.style.display='none';
   btn.disabled=true;btn.textContent='⏳ Vérification…';
   try{
@@ -6157,7 +6161,7 @@ async function saCreateSpace(){
       pdfFields:['num','titre','auteur','desc','demandeur'],
       catAccess:{member:['academique'],commission:['academique','spirituel'],resident:['academique'],enrol:['academique','spirituel'],admin:['academique','spirituel']}};
     const initAdmin={id:1,abbrev:admCode,prenom:'Administrateur',nom:name,
-      role:'admin',canPropose:true,propUntil:null,disabled:false,photoB64:null,profession:'',whatsapp:'',commune:''};
+      role:'admin',canPropose:true,propUntil:null,disabled:false,photoB64:null,profession:'',whatsapp:'',commune:'',email:admEmail};
     const initCounters={nxB:1,nxU:2,nxR:1,nxS:1,nxL:1};
     /* 1. Créer _spaces/{code} */
     await sbSetRoot('_spaces',code,spaceData);
@@ -6169,11 +6173,29 @@ async function saCreateSpace(){
     if(cntErr)throw new Error('Counters: '+cntErr.message);
     const {error:usrErr}=await sb.from('users').upsert({...initAdmin,space_code:code,neverExpires:true,createdAt:new Date().toISOString()});
     if(usrErr)throw new Error('Admin: '+usrErr.message);
+    /* 3. Créer le compte d'authentification de l'admin (e-mail + mot de passe).
+       signUp utilise la clé anon ; nécessite « Confirm email » = OFF dans Supabase.
+       On déconnecte aussitôt pour ne pas laisser de session dans le navigateur super-admin. */
+    let authNote='';
+    try{
+      const {error:suErr}=await sb.auth.signUp({email:admEmail,password:admPwd});
+      if(suErr){
+        const m=(suErr.message||'').toLowerCase();
+        authNote=(m.includes('already')||m.includes('registered'))
+          ? 'Cet e-mail possède déjà un compte : utilisez son mot de passe existant (celui saisi ici est ignoré).'
+          : 'Compte de connexion non créé ('+suErr.message+'). Créez-le dans Supabase → Authentication → Users.';
+      }
+      await sb.auth.signOut().catch(()=>{});
+    }catch(e){authNote='Compte de connexion non créé ('+e.message+').';}
     /* Succès */
     const url=`${window.location.origin}/${code}`;
     sucEl.innerHTML=html`✅ <strong>Bibliothèque "${name}" créée avec succès !</strong><br>
       🔗 URL : <a href="${url}" target="_blank" style="color:#4ade80;font-weight:700">${url}</a><br>
-      👤 Code admin : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${admCode}</code>`;
+      👤 Connexion admin :<br>
+      &nbsp;&nbsp;E-mail : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${admEmail}</code><br>
+      &nbsp;&nbsp;Mot de passe : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${admPwd}</code><br>
+      &nbsp;&nbsp;Code interne : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${admCode}</code>
+      ${safe(authNote?'<br><span style="color:#fbbf24">⚠️ '+esc(authNote)+'</span>':'')}`;
     sucEl.style.display='block';
     saClearCreate();
     saLoadSpaces();
