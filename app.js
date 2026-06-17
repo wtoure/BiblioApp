@@ -628,16 +628,13 @@ async function loadAllData(){
     /* ── 3. Lecture _spaces/{SPACE_ID} — avec cache localStorage (TTL 1h) ── */
     dbg.push('3. Lecture _spaces/'+SPACE_ID+'...');
     showLoading('Vérification du centre…');
-    /* Tentative de lecture depuis le cache pour économiser 1 lecture Supabase/session */
+    /* Toujours vérifier l'existence/l'état de l'espace en base : un espace
+       supprimé ou désactivé doit immédiatement afficher « introuvable »
+       (un cache localStorage masquait la suppression pendant 1h). */
     const _spacesCacheKey='cb_space_'+SPACE_ID;
-    let spaceDoc=null;
-    try{
-      const cached=JSON.parse(localStorage.getItem(_spacesCacheKey)||'null');
-      if(cached&&cached._ts&&Date.now()-cached._ts<3600000){spaceDoc=cached;dbg.push('3. _spaces depuis cache localStorage (0 lecture)');}
-    }catch(e){}
-    if(!spaceDoc){
-      spaceDoc=await sbGetDocRoot('_spaces',SPACE_ID);
-      if(spaceDoc){try{localStorage.setItem(_spacesCacheKey,JSON.stringify({...spaceDoc,_ts:Date.now()}));}catch(e){}}
+    let spaceDoc=await sbGetDocRoot('_spaces',SPACE_ID);
+    if(!spaceDoc||spaceDoc.active===false){
+      try{localStorage.removeItem(_spacesCacheKey);}catch(e){}
     }
     dbg.push('3. _spaces OK — doc: '+(spaceDoc?JSON.stringify(spaceDoc).substring(0,60):'null'));
     console.log('[CB]',dbg[dbg.length-1]);
