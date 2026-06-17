@@ -186,6 +186,9 @@ function UserEditModal({
   const [prenom, setPrenom] = useState(user.prenom)
   const [nom, setNom] = useState(user.nom)
   const [abbrev, setAbbrev] = useState(user.abbrev)
+  const [whatsapp, setWhatsapp] = useState(user.whatsapp ?? '')
+  const [commune, setCommune] = useState(user.commune ?? '')
+  const [profession, setProfession] = useState(user.profession ?? '')
   const [role, setRole] = useState<Role>(user.role)
   const [canPropose, setCanPropose] = useState(user.canPropose !== false)
   const [canLoan, setCanLoan] = useState(!!user.canLoan)
@@ -228,6 +231,9 @@ function UserEditModal({
       prenom: prenom.trim(),
       nom: nom.trim(),
       abbrev: ab,
+      whatsapp: whatsapp.trim() || null,
+      commune: commune.trim() || null,
+      profession: profession.trim() || null,
       role,
       canPropose,
       canLoan,
@@ -354,6 +360,9 @@ function UserEditModal({
           <ModalField label="Prénom *" value={prenom} onChange={setPrenom} />
           <ModalField label="Nom *" value={nom} onChange={setNom} />
           <ModalField label="Code de connexion *" value={abbrev} onChange={setAbbrev} />
+          <ModalField label="N° WhatsApp" value={whatsapp} onChange={setWhatsapp} />
+          <ModalField label="Commune" value={commune} onChange={setCommune} />
+          <ModalField label="Profession" value={profession} onChange={setProfession} />
 
           <div className="rounded-xl border border-slate-100 p-3">
             <ModalField label="E-mail (connexion)" value={email} onChange={setEmail} />
