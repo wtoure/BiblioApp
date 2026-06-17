@@ -322,9 +322,6 @@
         <input class="fi" id="e-adm-pwd" type="text" placeholder="Laisser vide pour ne pas changer (8 car. min.)" autocapitalize="none" spellcheck="false"/>
         <p class="note">Si renseigné : (re)crée le compte de connexion pour cet e-mail</p>
       </div>
-      <div class="fg">
-        <button type="button" class="btn-g" style="width:100%;color:#4ade80;border-color:rgba(74,222,128,.3)" onclick="shareSpaceLinks(document.getElementById('e-code').value)">📲 Partager les liens & accès (WhatsApp)</button>
-      </div>
       <p id="e-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
     </div>
     <div class="mft">
@@ -550,6 +547,7 @@ async function loadSpaces(){
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn-g" style="padding:6px 12px;font-size:12px" onclick="openEditByCode('${s.code}')">✏️ Modifier</button>
+          <button class="btn-g" style="padding:6px 12px;font-size:12px;color:#4ade80;border-color:rgba(74,222,128,.3)" onclick="shareSpaceLinks('${s.code}')">📲 Partager</button>
           <button class="btn-g" style="padding:6px 12px;font-size:12px;color:#a5b4fc;border-color:rgba(165,180,252,.2)" onclick="openRename('${s.code}')">🔄 Renommer</button>
           ${(()=>{
             const cnt=(window._spacesCounts||{})[s.code];
@@ -589,22 +587,42 @@ function openEdit(s){
   openM('m-edit');
 }
 
-/* Construit et ouvre WhatsApp avec les liens (desktop + mobile) et l'e-mail admin */
-function shareSpaceLinks(code){
+/* Raccourcisseur d'URL via is.gd (sans clé, CORS OK). Repli sur l'URL complète. */
+async function shortenUrl(url){
+  try{
+    const r=await fetch('https://is.gd/create.php?format=simple&url='+encodeURIComponent(url));
+    if(r.ok){const t=(await r.text()).trim();if(/^https?:\/\//.test(t))return t;}
+  }catch(_){}
+  return url;
+}
+
+/* Construit et ouvre WhatsApp avec les liens raccourcis (mobile + ordinateur)
+   et l'e-mail admin. La fenêtre est ouverte immédiatement (geste utilisateur)
+   pour éviter le blocage des popups pendant le raccourcissement. */
+async function shareSpaceLinks(code){
   if(!code)return;
   const s=(window._spacesCache||[]).find(x=>x.code===code)||{};
-  const em=(document.getElementById('e-adm-email')?.value||'').trim().toLowerCase()||(window._adminEmails||{})[code]||'';
+  const em=(window._adminEmails||{})[code]||(document.getElementById('e-adm-email')?.value||'').trim().toLowerCase();
   const dOrigin=window.location.origin;
   const name=s.name||s.short||code;
+  const win=window.open('','_blank');
+  if(win){try{win.document.write('<p style="font-family:sans-serif;padding:24px;color:#334155">Préparation des liens…</p>');}catch(_){}}
+  const [mLogin,mPub,dLogin,dPub]=await Promise.all([
+    shortenUrl(V2_BASE+'/'+code),
+    shortenUrl(V2_BASE+'/book/'+code),
+    shortenUrl(dOrigin+'/'+code),
+    shortenUrl(dOrigin+'/book/'+code)
+  ]);
   let m='Acces a la bibliotheque "'+name+'"\n\n';
   if(em)m+='E-mail de connexion (admin) : '+em+'\n\n';
   m+='--- APPLICATION MOBILE ---\n';
-  m+='Connexion : '+V2_BASE+'/'+code+'\n';
-  m+='Catalogue public : '+V2_BASE+'/book/'+code+'\n\n';
+  m+='Connexion : '+mLogin+'\n';
+  m+='Catalogue public : '+mPub+'\n\n';
   m+='--- VERSION ORDINATEUR ---\n';
-  m+='Connexion : '+dOrigin+'/'+code+'\n';
-  m+='Catalogue public : '+dOrigin+'/book/'+code+'\n';
-  window.open('https://wa.me/?text='+encodeURIComponent(m),'_blank');
+  m+='Connexion : '+dLogin+'\n';
+  m+='Catalogue public : '+dPub+'\n';
+  const url='https://wa.me/?text='+encodeURIComponent(m);
+  if(win)win.location.href=url; else window.open(url,'_blank');
 }
 
 /* Sauvegarder les modifications */
