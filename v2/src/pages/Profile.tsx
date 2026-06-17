@@ -8,12 +8,44 @@ import { fileToCompressedDataUrl } from '@/lib/image'
 import type { User } from '@/lib/types'
 
 export function Profile() {
-  const { user, logout, updateUser } = useAuth()
+  const { user, logout, updateUser, updatePassword } = useAuth()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [photo, setPhoto] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Changement de mot de passe
+  const [showPwd, setShowPwd] = useState(false)
+  const [pwd1, setPwd1] = useState('')
+  const [pwd2, setPwd2] = useState('')
+  const [pwdMsg, setPwdMsg] = useState('')
+  const [pwdErr, setPwdErr] = useState('')
+  const [pwdBusy, setPwdBusy] = useState(false)
+
+  async function changePwd() {
+    setPwdErr('')
+    setPwdMsg('')
+    if (pwd1.length < 8) {
+      setPwdErr('Le mot de passe doit contenir au moins 8 caractères.')
+      return
+    }
+    if (pwd1 !== pwd2) {
+      setPwdErr('Les deux mots de passe ne correspondent pas.')
+      return
+    }
+    setPwdBusy(true)
+    try {
+      await updatePassword(pwd1)
+      setPwdMsg('✅ Mot de passe mis à jour.')
+      setPwd1('')
+      setPwd2('')
+      setShowPwd(false)
+    } catch (e) {
+      setPwdErr(e instanceof Error ? e.message : 'Erreur.')
+    } finally {
+      setPwdBusy(false)
+    }
+  }
   const [form, setForm] = useState({
     whatsapp: '',
     commune: '',
@@ -188,6 +220,45 @@ export function Profile() {
             </div>
           </div>
         )}
+
+        {/* Changer mon mot de passe */}
+        <div className="mt-4 rounded-2xl bg-white p-4 shadow-card">
+          {!showPwd ? (
+            <button
+              onClick={() => {
+                setShowPwd(true)
+                setPwdErr('')
+                setPwdMsg('')
+              }}
+              className="w-full text-left text-sm font-semibold text-navy"
+            >
+              🔑 Changer mon mot de passe
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-navy">🔑 Nouveau mot de passe</p>
+              <Field label="Nouveau mot de passe (8 caractères min.)" value={pwd1} onChange={(e) => setPwd1(e.target.value)} type="password" />
+              <Field label="Confirmer" value={pwd2} onChange={(e) => setPwd2(e.target.value)} type="password" />
+              {pwdErr && <p className="text-sm text-red-600">{pwdErr}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowPwd(false)}
+                  className="flex-1 rounded-xl bg-slate-100 py-3 font-semibold text-slate-600"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={changePwd}
+                  disabled={pwdBusy}
+                  className="flex-1 rounded-xl bg-navy py-3 font-semibold text-white disabled:opacity-60"
+                >
+                  {pwdBusy ? 'Mise à jour…' : 'Valider'}
+                </button>
+              </div>
+            </div>
+          )}
+          {pwdMsg && <p className="mt-2 text-sm text-green-700">{pwdMsg}</p>}
+        </div>
 
         <button
           onClick={logout}

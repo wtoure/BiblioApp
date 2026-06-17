@@ -1,15 +1,19 @@
 // ════════════════════════════════════════════════════════════════
-// Edge Function : invite-user
-// Rôle : un ADMIN d'un espace provisionne le compte d'authentification
-//        d'un membre (création + email d'invitation) puis lie ce compte
-//        à la ligne `users` correspondante (colonne auth_id).
+// Edge Function : invite-user  (mode Option B — sans e-mail)
+// Rôle : un ADMIN d'un espace provisionne OU réinitialise le compte
+//        d'authentification d'un membre. La fonction GÉNÈRE un mot de
+//        passe temporaire, l'applique au compte auth (création ou mise à
+//        jour), lie le compte à la ligne `users` (auth_id), puis RENVOIE
+//        ce mot de passe à l'admin (à communiquer par WhatsApp).
+//
+//        Aucun e-mail n'est envoyé → indépendant du SMTP (cf. Option B).
 //
 // Sécurité :
-//   • Utilise la clé service_role (injectée par Supabase, JAMAIS commitée).
-//   • Vérifie que l'appelant est bien admin de l'espace avant d'agir.
+//   • Clé service_role (injectée par Supabase, JAMAIS commitée).
+//   • Vérifie que l'appelant est admin actif de l'espace avant d'agir.
 //
 // Déploiement :  supabase functions deploy invite-user
-// Appel (client) : supabase.functions.invoke('invite-user', { body })
+//                (ou Dashboard → Edge Functions → invite-user → coller → Deploy)
 // ════════════════════════════════════════════════════════════════
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -27,6 +31,16 @@ function json(status: number, obj: unknown): Response {
 }
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+// Mot de passe temporaire lisible (10 caractères, sans I/l/O/0/1 ambigus).
+function genPassword(): string {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  const arr = new Uint32Array(10)
+  crypto.getRandomValues(arr)
+  let p = ''
+  for (let i = 0; i < 10; i++) p += chars[arr[i] % chars.length]
+  return p
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
@@ -50,7 +64,6 @@ Deno.serve(async (req: Request) => {
     const space_code = String(body.space_code ?? '').trim()
     const userId = body.user_id
     const email = String(body.email ?? '').trim().toLowerCase()
-    const redirectTo = String(body.redirect_to ?? '').trim() || undefined
     if (!space_code || userId === undefined || userId === null || !email)
       return json(400, { error: 'Paramètres manquants (space_code, user_id, email).' })
     if (!EMAIL_RE.test(email)) return json(400, { error: 'Email invalide.' })
@@ -74,43 +87,51 @@ Deno.serve(async (req: Request) => {
       .maybeSingle()
     if (tErr || !target) return json(404, { error: 'Compte cible introuvable.' })
 
-    // 5. Inviter : crée le compte auth + envoie l'email d'invitation
+    // 5. Générer le mot de passe temporaire + appliquer au compte auth
+    const password = genPassword()
     const meta = { space_code, app_user_id: target.id }
-    const { data: inv, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: meta,
-      redirectTo,
-    })
+    let authId: string | null = target.auth_id ?? null
+    let created = false
 
-    if (!invErr && inv?.user) {
-      await admin
-        .from('users')
-        .update({ auth_id: inv.user.id, email })
-        .eq('id', target.id)
-        .eq('space_code', space_code)
-      return json(200, { ok: true, invited: true, auth_id: inv.user.id })
-    }
-
-    // 6. L'email possède déjà un compte auth → on relie la ligne et on
-    //    signale au client de déclencher une réinitialisation de mot de passe.
-    const msg = (invErr?.message || '').toLowerCase()
-    const status = (invErr as { status?: number } | null)?.status
-    if (msg.includes('already') || msg.includes('exist') || status === 422) {
-      const { data: link, error: lErr } = await admin.auth.admin.generateLink({
-        type: 'recovery',
+    if (!authId) {
+      // Tenter une création directe (e-mail confirmé → connexion immédiate).
+      const { data: cr, error: crErr } = await admin.auth.admin.createUser({
         email,
-        options: { redirectTo },
+        password,
+        email_confirm: true,
+        user_metadata: meta,
       })
-      if (lErr || !link?.user)
-        return json(409, { error: 'Email déjà utilisé ; liaison impossible : ' + (lErr?.message || '') })
-      await admin
-        .from('users')
-        .update({ auth_id: link.user.id, email })
-        .eq('id', target.id)
-        .eq('space_code', space_code)
-      return json(200, { ok: true, invited: false, alreadyExisted: true, auth_id: link.user.id })
+      if (!crErr && cr?.user) {
+        authId = cr.user.id
+        created = true
+      } else {
+        // Compte déjà existant pour cet e-mail → récupérer son id.
+        const m = (crErr?.message || '').toLowerCase()
+        if (m.includes('already') || m.includes('registered') || m.includes('exist')) {
+          const { data: link } = await admin.auth.admin.generateLink({ type: 'recovery', email })
+          if (link?.user) authId = link.user.id
+        }
+        if (!authId) return json(500, { error: crErr?.message || 'Création du compte impossible.' })
+      }
     }
 
-    return json(500, { error: invErr?.message || "Échec de l'invitation." })
+    if (!created && authId) {
+      // Compte existant → définir le nouveau mot de passe temporaire.
+      const { error: upErr } = await admin.auth.admin.updateUserById(authId, {
+        password,
+        email_confirm: true,
+      })
+      if (upErr) return json(500, { error: upErr.message })
+    }
+
+    // 6. Lier la ligne users (auth_id + email)
+    await admin
+      .from('users')
+      .update({ auth_id: authId, email })
+      .eq('id', target.id)
+      .eq('space_code', space_code)
+
+    return json(200, { ok: true, password, email, created, auth_id: authId })
   } catch (e) {
     return json(500, { error: (e as Error).message })
   }

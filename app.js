@@ -1498,18 +1498,24 @@ async function doLogin(){
 }
 ['li-email','li-pwd'].forEach(idd=>{const el=document.getElementById(idd);if(el)el.addEventListener('keypress',e=>{if(e.key==='Enter')doLogin();});});
 
-/* ── Mot de passe oublié : envoie un email de réinitialisation ── */
-async function openForgotPwd(){
-  _initSb();
-  const email=prompt('Entrez votre e-mail pour recevoir un lien de réinitialisation :','');
-  if(email===null)return;
-  const em=email.trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert('E-mail invalide.');return;}
-  try{
-    const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname+'?setpw=1'});
-    if(error)throw new Error(error.message);
-    alert('Si un compte existe pour cet e-mail, un lien de réinitialisation vient d\'être envoyé. Vérifiez votre boîte mail (et les spams).');
-  }catch(e){alert('Erreur : '+_authMsg(e.message));}
+/* ── Mot de passe oublié : on oriente vers l'administrateur (Option B, sans
+   e-mail). L'admin régénère un mot de passe et le communique par WhatsApp. ── */
+function openForgotPwd(){
+  const name=cfg.contactName||'';
+  const num=cfg.contact||'';
+  const contactLine=[name,num].filter(Boolean).join(' · ');
+  let info='Mot de passe oublié ?\n\nContactez l\'administrateur de la bibliothèque';
+  info+=contactLine?(' :\n\n'+contactLine):'.';
+  info+='\n\nIl vous communiquera un nouveau mot de passe.';
+  if(num){
+    const wa=num.replace(/[^0-9+]/g,'').replace(/^\+/,'');
+    if(confirm(info+'\n\nOK = ouvrir WhatsApp pour le contacter.')){
+      const m='Bonjour, j ai oublie mon mot de passe et je souhaite le reinitialiser. Merci.';
+      window.open('https://wa.me/'+wa+'?text='+encodeURIComponent(m),'_blank');
+    }
+  }else{
+    alert(info);
+  }
 }
 
 /* ── Définir / réinitialiser le mot de passe (session de récupération active) ── */
@@ -1566,34 +1572,35 @@ async function submitSetPwd(){
   }catch(e){if(err)err.textContent=_authMsg(e.message);if(btn)btn.disabled=false;}
 }
 
-/* ── État du compte auth dans le formulaire membre + bouton Inviter ── */
+/* ── État du compte auth dans le formulaire membre + bouton accès ── */
 function _setUfAuthStatus(hasAuth,showBtn){
   const st=document.getElementById('uf-auth-status');
   const btn=document.getElementById('uf-invite-btn');
-  if(st)st.innerHTML=showBtn?(hasAuth?'<span style="color:#16a34a">● Compte activé</span>':'<span style="color:#d97706">○ Pas encore invité</span>'):'';
-  if(btn){btn.style.display=showBtn?'':'none';btn.textContent=hasAuth?'✉️ Renvoyer l’invitation':'✉️ Inviter';}
+  if(st)st.innerHTML=showBtn?(hasAuth?'<span style="color:#16a34a">● Compte activé</span>':'<span style="color:#d97706">○ Accès non créé</span>'):'';
+  if(btn){btn.style.display=showBtn?'':'none';btn.textContent=hasAuth?'🔑 Réinitialiser le mot de passe':'🔑 Créer l’accès';}
 }
-/* Invite le membre en cours d'édition (enregistre d'abord son e-mail). */
+/* Créer l'accès / réinitialiser le mot de passe du membre en cours d'édition.
+   Génère un mot de passe temporaire (Option B, sans e-mail) et propose de
+   le communiquer par WhatsApp. */
 async function invManFromForm(){
-  if(!ufEid){alert('Enregistrez d\'abord le compte, puis rouvrez-le pour l\'inviter.');return;}
+  if(!ufEid){alert('Enregistrez d\'abord le compte, puis rouvrez-le.');return;}
   const em=(document.getElementById('ufemail')?.value||'').trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert('Saisissez un e-mail valide avant d\'inviter.');return;}
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert('Saisissez un e-mail valide d\'abord (il sert d\'identifiant de connexion).');return;}
   const btn=document.getElementById('uf-invite-btn');
-  if(btn){btn.disabled=true;btn.textContent='Envoi…';}
+  if(btn){btn.disabled=true;btn.textContent='Traitement…';}
   try{
     await sbUpd('users',ufEid,{email:em});
     const i=users.findIndex(u=>String(u.id)===String(ufEid));if(i>=0)users[i].email=em;
     const res=await _inviteMember(ufEid,em);
     if(res.ok){
-      if(i>=0){users[i].auth_id=users[i].auth_id||'pending';}
+      if(i>=0)users[i].auth_id=users[i].auth_id||'pending';
       _setUfAuthStatus(true,true);
-      if(res.emailWarning){
-        alert('⚠️ Compte relié, mais l\'e-mail n\'a PAS pu être envoyé :\n\n'+res.emailWarning+'\n\nLe membre ne recevra pas de lien. Communiquez-lui plutôt un mot de passe temporaire (créé dans Supabase → Authentication → Users) par WhatsApp.');
-      }else{
-        alert(res.alreadyExisted?'✅ Compte existant relié — e-mail de réinitialisation envoyé à '+em:'✅ Invitation envoyée à '+em);
-      }
+      const pwd=res.password||'';
+      const act=res.created?'Compte créé':'Mot de passe réinitialisé';
+      const go=confirm('✅ '+act+' pour '+em+'\n\nMot de passe temporaire :\n\n        '+pwd+'\n\nNotez-le puis communiquez-le au membre.\nOK = préparer le message WhatsApp (avec le mot de passe).');
+      if(go)shareAccess(ufEid,pwd);
     }else{
-      alert('❌ Invitation : '+res.error);
+      alert('❌ '+res.error);
     }
   }catch(e){alert('❌ Erreur : '+e.message);}
   finally{
@@ -1603,15 +1610,15 @@ async function invManFromForm(){
   }
 }
 
-/* ── Inviter un membre (création compte auth via Edge Function invite-user) ── */
+/* ── Créer/réinitialiser l'accès via l'Edge Function invite-user (Option B).
+   Renvoie {ok, password, created} — aucun e-mail n'est envoyé. ── */
 async function _inviteMember(userId,email){
   _initSb();
   const em=(email||'').trim().toLowerCase();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em))return{ok:false,error:'E-mail invalide.'};
   try{
     const {data,error}=await sb.functions.invoke('invite-user',{body:{
-      space_code:SPACE_ID,user_id:userId,email:em,
-      redirect_to:location.origin+location.pathname+'?setpw=1'
+      space_code:SPACE_ID,user_id:userId,email:em
     }});
     if(error){
       const ctx=error.context;let msg=error.message;
@@ -1619,18 +1626,7 @@ async function _inviteMember(userId,email){
       return{ok:false,error:msg};
     }
     if(data&&data.error)return{ok:false,error:data.error};
-    let emailWarning=null;
-    if(data&&data.alreadyExisted){
-      const {error:rstErr}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname+'?setpw=1'});
-      if(rstErr){
-        /* 429 = SMTP intégré Supabase saturé (limite de quelques emails/heure).
-           Solution : configurer un SMTP dédié, ou communiquer un mot de passe par WhatsApp. */
-        emailWarning=/rate|429|too many/i.test(rstErr.message)
-          ? 'Limite d\'envoi d\'e-mails atteinte (SMTP Supabase). Réessayez plus tard ou configurez un SMTP dédié.'
-          : _authMsg(rstErr.message);
-      }
-    }
-    return{ok:true,invited:!!(data&&data.invited),alreadyExisted:!!(data&&data.alreadyExisted),emailWarning};
+    return{ok:true,password:data&&data.password,created:!!(data&&data.created)};
   }catch(e){return{ok:false,error:e.message};}
 }
 function doLogout(){stopRealtimeSync();curUser=null;_admUsRefreshed=false;_admLoginLogLoaded=false;loginLog=[];try{_initSb();sb.auth.signOut();}catch(_){}localStorage.removeItem('cb_session');localStorage.removeItem('cb_lastview');localStorage.removeItem('cb_lasttab');sv('vl');}
@@ -3378,18 +3374,16 @@ function openGuide(){
   document.body.appendChild(ov);
 }
 
-/* Partager les accès d'un membre via WhatsApp (message adapté au rôle) */
-function shareAccess(id){
+/* Partager les accès d'un membre via WhatsApp (message adapté au rôle).
+   tempPwd : mot de passe temporaire à inclure (Option B), optionnel. */
+function shareAccess(id,tempPwd){
   const u=users.find(x=>x.id==id);if(!u){alert('Membre introuvable.');return;}
   if(!u.whatsapp){alert('Ce membre n\'a pas de numéro WhatsApp enregistré.');return;}
   const appUrl=(cfg.shortLink&&cfg.shortLink.trim())?cfg.shortLink.trim():(window.location.origin+'/'+SPACE_ID);
   const roleLabel=ROLE_LABELS[u.role]||'Membre';
   const caps=_userCapabilities(u);
   const libName=(SPACE&&SPACE.name)||'la bibliothèque';
-
-  /* Lien direct vers la réinitialisation/définition du mot de passe (canonique,
-     pour garantir que le paramètre ?forgot=1 fonctionne même si shortLink est défini). */
-  const resetUrl=window.location.origin+'/'+SPACE_ID+'?forgot=1';
+  const adminContact=(cfg.contactName||cfg.contact)?(' ('+[cfg.contactName,cfg.contact].filter(Boolean).join(' ')+')'):'';
 
   /* Message sans caractères problematiques pour WhatsApp (pas de keycap U+20E3, pas d'emoji rares) */
   let msg='Bonjour ' + u.prenom + ' !\n\n';
@@ -3404,17 +3398,18 @@ function shareAccess(id){
   if(u.email){
     msg+='1. Ouvrez ce lien (telephone ou ordinateur) :\n' + appUrl + '\n';
     msg+='2. E-mail : ' + u.email + '\n';
-    msg+='3. Mot de passe : celui qui vous a ete communique.\n\n';
-    msg+='Premiere connexion ou mot de passe oublie ?\n';
-    msg+='Definissez votre mot de passe ici :\n' + resetUrl + '\n';
-    msg+='(saisissez votre e-mail, vous recevrez un lien).\n\n';
+    if(tempPwd){
+      msg+='3. Mot de passe temporaire : ' + tempPwd + '\n';
+      msg+='   (vous pourrez le changer apres connexion, dans Profil)\n\n';
+    }else{
+      msg+='3. Mot de passe : celui qui vous a ete communique.\n\n';
+    }
+    msg+='Mot de passe oublie ? Contactez l administrateur'+adminContact+'\n';
+    msg+='qui vous en redonnera un nouveau.\n\n';
   }else{
     msg+='Pour activer votre acces, communiquez d abord une adresse\n';
-    msg+='e-mail a l administrateur (elle servira a creer votre\n';
-    msg+='connexion). Ensuite :\n';
-    msg+='1. Ouvrez ce lien : ' + appUrl + '\n';
-    msg+='2. Definissez votre mot de passe ici :\n' + resetUrl + '\n';
-    msg+='(saisissez votre e-mail, vous recevrez un lien).\n\n';
+    msg+='e-mail a l administrateur'+adminContact+'. Il creera votre\n';
+    msg+='connexion et vous transmettra un mot de passe.\n\n';
   }
   msg+='L application fonctionne sur telephone ET sur ordinateur.\n\n';
   msg+='A bientot a ' + libName + ' !';
@@ -5312,16 +5307,17 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
     rAdmRegistrations();
     try{rAdmUs();}catch(e){}
     _showSyncToast('✅ Compte créé — code : '+abbrev);
-    /* 6. Inviter le compte d'authentification (email d'invitation → set-password) */
+    /* 6. Créer l'accès auth + mot de passe temporaire (Option B, sans e-mail) */
     if(regEmail){
       const res=await _inviteMember(newId,regEmail);
       if(res.ok){
-        alert(`✅ Compte créé et invitation envoyée !\n\n${reg.prenom} ${reg.nom}\nCode : ${abbrev}\nE-mail : ${regEmail}\n\nLe membre reçoit un lien pour définir son mot de passe.`);
+        const go=confirm(`✅ Compte créé pour ${reg.prenom} ${reg.nom}\nE-mail : ${regEmail}\n\nMot de passe temporaire :\n\n        ${res.password||''}\n\nNotez-le puis communiquez-le au membre.\nOK = préparer le message WhatsApp (avec le mot de passe).`);
+        if(go)shareAccess(newId,res.password||'');
       }else{
-        alert(`✅ Compte créé (code : ${abbrev}), mais l'invitation a échoué :\n${res.error}\n\nVous pourrez réessayer via « Inviter » dans la gestion des membres.`);
+        alert(`✅ Compte créé (code : ${abbrev}), mais la création de l'accès a échoué :\n${res.error}\n\nRéessayez via « Créer l'accès » dans la gestion des membres.`);
       }
     }else{
-      alert(`✅ Compte créé (code : ${abbrev}).\n\n⚠️ Sans e-mail : saisissez son e-mail puis cliquez « Inviter » dans la gestion des membres.`);
+      alert(`✅ Compte créé (code : ${abbrev}).\n\n⚠️ Sans e-mail : saisissez son e-mail puis cliquez « Créer l'accès » dans la gestion des membres.`);
     }
   }catch(e){
     console.error('[approveRegistration]',e.message);

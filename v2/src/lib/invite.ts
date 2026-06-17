@@ -3,19 +3,19 @@ import { SPACE_ID } from './space'
 
 export interface InviteResult {
   ok: boolean
-  invited?: boolean
-  alreadyExisted?: boolean
+  /** Mot de passe temporaire généré (à communiquer au membre par WhatsApp). */
+  password?: string
+  /** true si le compte auth vient d'être créé, false si réinitialisé. */
+  created?: boolean
   error?: string
 }
 
 /**
- * Invite (ou relie) le compte d'authentification d'un membre via l'Edge
- * Function `invite-user` (service_role, côté serveur). L'appelant doit être
- * admin de l'espace — vérifié côté fonction.
- *
- * Si le compte auth existe déjà, on déclenche en complément un email de
- * réinitialisation de mot de passe pour que le membre puisse (re)définir
- * son accès.
+ * Crée l'accès d'un membre OU réinitialise son mot de passe via l'Edge
+ * Function `invite-user` (service_role). Option B : aucun e-mail n'est
+ * envoyé — la fonction renvoie un mot de passe temporaire que l'admin
+ * communique au membre (par WhatsApp). L'appelant doit être admin (vérifié
+ * côté fonction).
  */
 export async function inviteMember(userId: number, email: string): Promise<InviteResult> {
   const trimmed = email.trim().toLowerCase()
@@ -24,12 +24,7 @@ export async function inviteMember(userId: number, email: string): Promise<Invit
   }
 
   const { data, error } = await supabase.functions.invoke('invite-user', {
-    body: {
-      space_code: SPACE_ID,
-      user_id: userId,
-      email: trimmed,
-      redirect_to: window.location.origin + '/set-password',
-    },
+    body: { space_code: SPACE_ID, user_id: userId, email: trimmed },
   })
 
   if (error) {
@@ -48,12 +43,5 @@ export async function inviteMember(userId: number, email: string): Promise<Invit
   }
   if (data?.error) return { ok: false, error: data.error }
 
-  // Compte préexistant : envoyer aussi un email de réinitialisation.
-  if (data?.alreadyExisted) {
-    await supabase.auth.resetPasswordForEmail(trimmed, {
-      redirectTo: window.location.origin + '/set-password',
-    })
-  }
-
-  return { ok: true, invited: !!data?.invited, alreadyExisted: !!data?.alreadyExisted }
+  return { ok: true, password: data?.password, created: !!data?.created }
 }
