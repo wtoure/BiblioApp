@@ -320,7 +320,7 @@
       <div class="fg">
         <label>🔒 Nouveau mot de passe admin <span style="color:var(--muted);font-weight:400">(optionnel)</span></label>
         <input class="fi" id="e-adm-pwd" type="text" placeholder="Laisser vide pour ne pas changer (8 car. min.)" autocapitalize="none" spellcheck="false"/>
-        <p class="note">Si renseigné : (re)crée le compte de connexion pour cet e-mail</p>
+        <p class="note">Si renseigné : définit / réinitialise le mot de passe de connexion (compte existant ou nouveau)</p>
       </div>
       <p id="e-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
     </div>
@@ -381,6 +381,22 @@ async function sbDel(table,match){
   for(const[k,v]of Object.entries(match))q=q.eq(k,v);
   const{error}=await q;
   if(error)throw new Error(error.message);
+}
+
+/* Définit/réinitialise le mot de passe de connexion d'un admin via l'Edge
+   Function sa-set-admin (autorisée par le mot de passe maître super-admin).
+   Fonctionne pour un compte existant comme nouveau. */
+async function saSetAdmin(space_code,email,password){
+  const {data,error}=await _sb().functions.invoke('sa-set-admin',{body:{
+    sa_password:window._saPwd||'',space_code,email,password
+  }});
+  if(error){
+    let msg=error.message;const ctx=error.context;
+    if(ctx&&typeof ctx.json==='function'){try{const j=await ctx.json();if(j&&j.error)msg=j.error;}catch(_){}}
+    return {ok:false,error:msg};
+  }
+  if(data&&data.error)return{ok:false,error:data.error};
+  return {ok:true,created:!!(data&&data.created)};
 }
 
 async function sha256(s){
@@ -452,6 +468,7 @@ async function saLogin(){
       return;
     }
     errEl.textContent='';
+    window._saPwd=pwd; /* gardé en mémoire pour autoriser l'Edge Function sa-set-admin */
     document.getElementById('login-view').style.display='none';
     document.getElementById('panel-view').style.display='block';
     loadSpaces();
@@ -629,24 +646,18 @@ async function saveEdit(){
     if(admEmail)admPatch.email=admEmail;
     if(admCode)admPatch.abbrev=admCode;
     if(Object.keys(admPatch).length)await sbUpd('users',{space_code:code,id:1},admPatch);
-    /* (Re)créer le compte de connexion si un mot de passe est fourni */
+    /* Définir/réinitialiser le mot de passe de connexion si fourni (Edge Function) */
     let authNote='';
     if(admPwd&&admEmail){
       try{
-        const {error:suErr}=await _sb().auth.signUp({email:admEmail,password:admPwd});
-        if(suErr){
-          const mm=(suErr.message||'').toLowerCase();
-          authNote=(mm.includes('already')||mm.includes('registered'))
-            ? '\n\n⚠️ Cet e-mail a déjà un compte : le mot de passe saisi est ignoré (utilisez l\'existant).'
-            : '\n\n⚠️ Compte non créé : '+suErr.message;
-        }
-        await _sb().auth.signOut().catch(()=>{});
-      }catch(e){authNote='\n\n⚠️ Compte non créé : '+e.message;}
+        const r=await saSetAdmin(code,admEmail,admPwd);
+        if(!r.ok)authNote='\n\n⚠️ Mot de passe non appliqué : '+r.error;
+      }catch(e){authNote='\n\n⚠️ Mot de passe non appliqué : '+e.message;}
     }
     /* E-mail changé sans mot de passe → le compte Auth garde l'ancien e-mail */
     const prevEmail=(window._adminEmails||{})[code]||'';
     if(admEmail&&admEmail!==prevEmail&&!admPwd){
-      authNote+='\n\n⚠️ E-mail modifié sans mot de passe : définissez aussi un mot de passe pour activer la connexion avec ce nouvel e-mail.';
+      authNote+='\n\n⚠️ E-mail modifié sans mot de passe : indiquez aussi un mot de passe pour (ré)activer la connexion avec ce nouvel e-mail.';
     }
     cM('m-edit');
     loadSpaces();
@@ -822,19 +833,12 @@ async function createSpace(){
       neverExpires:true,tabs:[],assignedShelves:[],spiritualAccess:false,canLoan:false
     });
 
-    /* 5. Compte de connexion (e-mail + mot de passe). signUp via clé anon ;
-       nécessite « Confirm email » = OFF dans Supabase. signOut ensuite pour ne
-       pas laisser de session dans le navigateur super-admin. */
+    /* 5. Compte de connexion (e-mail + mot de passe) via Edge Function sa-set-admin
+       (crée le compte auth confirmé, mot de passe défini, lié à la ligne users). */
     let authNote='';
     try{
-      const {error:suErr}=await _sb().auth.signUp({email:admEmail,password:admPwd});
-      if(suErr){
-        const m=(suErr.message||'').toLowerCase();
-        authNote=(m.includes('already')||m.includes('registered'))
-          ? 'Cet e-mail possède déjà un compte : utilisez son mot de passe existant (celui saisi ici est ignoré).'
-          : 'Compte de connexion non créé ('+suErr.message+'). Créez-le dans Supabase → Authentication → Users.';
-      }
-      await _sb().auth.signOut().catch(()=>{});
+      const r=await saSetAdmin(code,admEmail,admPwd);
+      if(!r.ok)authNote='Compte de connexion non créé : '+r.error;
     }catch(e){authNote='Compte de connexion non créé ('+e.message+').';}
 
     const url=`${window.location.origin}/${code}`;
