@@ -3396,10 +3396,20 @@ function openGuide(){
 }
 
 /* Partager les accès d'un membre via WhatsApp (message adapté au rôle).
-   tempPwd : mot de passe temporaire à inclure (Option B), optionnel. */
-function shareAccess(id,tempPwd){
+   Le mot de passe est TOUJOURS inclus en clair : si aucun n'est fourni
+   (bouton « Partager » de la liste), on en (re)génère un — l'ancien cesse
+   alors de fonctionner. tempPwd : mot de passe déjà généré (invitation/reset). */
+async function shareAccess(id,tempPwd){
   const u=users.find(x=>x.id==id);if(!u){alert('Membre introuvable.');return;}
   if(!u.whatsapp){alert('Ce membre n\'a pas de numéro WhatsApp enregistré.');return;}
+  let pwd=tempPwd;
+  if(!pwd){
+    if(!confirm('Pour partager le mot de passe en clair, un NOUVEAU mot de passe va être généré pour '+u.prenom+' '+u.nom+'.\n\nL\'ancien (s\'il existait) ne fonctionnera plus.\n\nContinuer ?'))return;
+    const res=await _inviteMember(id);
+    if(!res.ok){alert('❌ Impossible de générer le mot de passe : '+res.error);return;}
+    pwd=res.password||'';
+    const i=users.findIndex(x=>x.id==id);if(i>=0)users[i].auth_id=users[i].auth_id||'pending';
+  }
   const appUrl=(cfg.shortLink&&cfg.shortLink.trim())?cfg.shortLink.trim():(window.location.origin+'/'+SPACE_ID);
   const roleLabel=ROLE_LABELS[u.role]||'Membre';
   const caps=_userCapabilities(u);
@@ -3411,19 +3421,15 @@ function shareAccess(id,tempPwd){
   msg+='Bienvenue a ' + libName + ' ! Votre compte a ete cree.\n\n';
   msg+='--- VOS ACCES ---\n';
   msg+='Votre code de connexion : ' + u.abbrev + '\n';
-  if(tempPwd)msg+='Mot de passe : ' + tempPwd + '\n';
+  msg+='Mot de passe : ' + pwd + '\n';
   msg+='Role : ' + roleLabel + '\n\n';
   msg+='--- CE QUE VOUS POUVEZ FAIRE ---\n';
   caps.forEach(c=>{msg+=c.title+'\n'+c.desc+'\n\n';});
   msg+='--- COMMENT SE CONNECTER ---\n';
   msg+='1. Ouvrez ce lien (telephone ou ordinateur) :\n' + appUrl + '\n';
   msg+='2. Code : ' + u.abbrev + '\n';
-  if(tempPwd){
-    msg+='3. Mot de passe : ' + tempPwd + '\n';
-    msg+='   (vous pourrez le changer apres connexion, dans Profil)\n\n';
-  }else{
-    msg+='3. Mot de passe : celui qui vous a ete communique.\n\n';
-  }
+  msg+='3. Mot de passe : ' + pwd + '\n';
+  msg+='   (vous pourrez le changer apres connexion, dans Profil)\n\n';
   msg+='Mot de passe oublie ? Contactez l administrateur'+adminContact+'\n';
   msg+='qui vous en redonnera un nouveau.\n\n';
   msg+='L application fonctionne sur telephone ET sur ordinateur.\n\n';
