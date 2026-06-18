@@ -12,19 +12,18 @@ export interface InviteResult {
 
 /**
  * Crée l'accès d'un membre OU réinitialise son mot de passe via l'Edge
- * Function `invite-user` (service_role). Option B : aucun e-mail n'est
+ * Function `invite-user` (service_role). L'identifiant de connexion est le
+ * CODE du membre (résolu côté fonction). Aucun e-mail n'est requis ni
  * envoyé — la fonction renvoie un mot de passe temporaire que l'admin
  * communique au membre (par WhatsApp). L'appelant doit être admin (vérifié
  * côté fonction).
+ *
+ * @param resetPassword `false` resynchronise seulement l'e-mail technique
+ *   (sans changer le mot de passe) — utilisé quand le code change.
  */
-export async function inviteMember(userId: number, email: string): Promise<InviteResult> {
-  const trimmed = email.trim().toLowerCase()
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-    return { ok: false, error: 'E-mail invalide.' }
-  }
-
+export async function inviteMember(userId: number, resetPassword = true): Promise<InviteResult> {
   const { data, error } = await supabase.functions.invoke('invite-user', {
-    body: { space_code: SPACE_ID, user_id: userId, email: trimmed },
+    body: { space_code: SPACE_ID, user_id: userId, reset_password: resetPassword },
   })
 
   if (error) {

@@ -243,11 +243,23 @@ function UserEditModal({
       email: email.trim().toLowerCase() || null,
     }
     const { error } = await supabase.from('users').update(patch).eq('id', user.id).eq('space_code', SPACE_ID)
-    setBusy(false)
     if (error) {
+      setBusy(false)
       setErr(error.message)
       return
     }
+    // Le code est l'identifiant de connexion : s'il change et que le membre a
+    // déjà un accès, resynchroniser l'e-mail technique côté Auth (sans changer
+    // le mot de passe).
+    if (ab !== user.abbrev && user.auth_id) {
+      const sync = await inviteMember(user.id, false)
+      if (!sync.ok) {
+        setBusy(false)
+        setErr('Code enregistré, mais connexion non resynchronisée : ' + sync.error)
+        return
+      }
+    }
+    setBusy(false)
     onSaved()
   }
 
@@ -297,29 +309,26 @@ function UserEditModal({
     }
   }
 
-  // Créer l'accès / réinitialiser le mot de passe (Option B, sans e-mail) :
-  // enregistre l'e-mail, appelle l'Edge Function, récupère un mot de passe
-  // temporaire à communiquer au membre par WhatsApp.
+  // Créer l'accès / réinitialiser le mot de passe (identifiant = code) :
+  // enregistre l'e-mail de contact s'il est fourni, appelle l'Edge Function,
+  // récupère un mot de passe temporaire à communiquer au membre par WhatsApp.
   async function sendInvite() {
-    const em = email.trim().toLowerCase()
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) {
-      setErr('Saisissez un e-mail valide (il sert d’identifiant de connexion).')
-      return
-    }
     setBusy(true)
     setErr('')
     setOkMsg('')
     setTempPwd('')
     try {
-      const { error } = await supabase.from('users').update({ email: em }).eq('id', user.id).eq('space_code', SPACE_ID)
-      if (error) throw new Error(error.message)
-      const res = await inviteMember(user.id, em)
+      const em = email.trim().toLowerCase()
+      if (em && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) {
+        await supabase.from('users').update({ email: em }).eq('id', user.id).eq('space_code', SPACE_ID)
+      }
+      const res = await inviteMember(user.id)
       if (!res.ok) {
         setErr('Accès : ' + res.error)
       } else {
         const pwd = res.password ?? ''
         setTempPwd(pwd)
-        setOkMsg(`✅ ${res.created ? 'Accès créé' : 'Mot de passe réinitialisé'}. Mot de passe temporaire : ${pwd}`)
+        setOkMsg(`✅ ${res.created ? 'Accès créé' : 'Mot de passe réinitialisé'}. Code : ${abbrev.trim().toLowerCase()} · Mot de passe : ${pwd}`)
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -339,8 +348,8 @@ function UserEditModal({
     let m = `Bonjour ${user.prenom} !\n\n`
     m += `Votre acces a la bibliotheque a ete cree.\n\n`
     m += `--- VOS ACCES ---\n`
-    m += `E-mail : ${email.trim().toLowerCase()}\n`
-    if (tempPwd) m += `Mot de passe temporaire : ${tempPwd}\n(a changer apres connexion, dans Profil)\n`
+    m += `Code de connexion : ${abbrev.trim().toLowerCase()}\n`
+    if (tempPwd) m += `Mot de passe : ${tempPwd}\n(a changer apres connexion, dans Profil)\n`
     m += `\nConnexion : ${appUrl}\n\n`
     m += `Mot de passe oublie ? Contactez l administrateur.`
     window.open(`https://wa.me/${wa}?text=${encodeURIComponent(m)}`, '_blank')
@@ -365,7 +374,7 @@ function UserEditModal({
           <ModalField label="Profession" value={profession} onChange={setProfession} />
 
           <div className="rounded-xl border border-slate-100 p-3">
-            <ModalField label="E-mail (connexion)" value={email} onChange={setEmail} />
+            <ModalField label="E-mail (contact, facultatif)" value={email} onChange={setEmail} />
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className={`text-xs font-medium ${hasAuth ? 'text-green-600' : 'text-amber-600'}`}>
                 {hasAuth ? '● Compte activé' : '○ Accès non créé'}
@@ -530,14 +539,9 @@ function RegistrationsSection() {
     const role = getRoleFor(r.id)
     const abbrev = genAbbrev(r.prenom, r.nom, users ?? [])
     const email = (r.email || '').trim().toLowerCase()
-    if (!email) {
-      alert(
-        `Cette demande n'a pas d'e-mail. L'e-mail est désormais nécessaire pour créer le compte (connexion par e-mail + mot de passe).\n\nLe compte sera créé, mais vous devrez saisir son e-mail dans « Membres » puis cliquer « Inviter ».`,
-      )
-    }
     if (
       !window.confirm(
-        `Créer le compte de ${r.prenom} ${r.nom} ?\n\nRôle : ${ROLE_LABEL[role] ?? role}\nCode : ${abbrev}\n${email ? `Une invitation sera envoyée à ${email} pour définir le mot de passe.` : '⚠️ Sans e-mail, le membre ne pourra pas se connecter tant qu\'il ne sera pas invité.'}`,
+        `Créer le compte de ${r.prenom} ${r.nom} ?\n\nRôle : ${ROLE_LABEL[role] ?? role}\nCode de connexion : ${abbrev}\n\nUn mot de passe sera généré : vous le communiquerez au membre (WhatsApp). Aucun e-mail n'est requis.`,
       )
     )
       return
@@ -596,30 +600,26 @@ function RegistrationsSection() {
       qc.invalidateQueries({ queryKey: ['registrations', SPACE_ID] })
       qc.invalidateQueries({ queryKey: ['users', SPACE_ID] })
 
-      // 4. Créer l'accès auth + mot de passe temporaire (Option B, sans e-mail)
-      if (email) {
-        const res = await inviteMember(newId, email)
-        if (res.ok) {
-          const pwd = res.password ?? ''
-          const wa = (r.whatsapp ?? '').replace(/[^0-9+]/g, '').replace(/^\+/, '')
-          const go = confirm(
-            `✅ Compte créé pour ${r.prenom} ${r.nom}\nE-mail : ${email}\n\nMot de passe temporaire :\n\n        ${pwd}\n\nNotez-le puis communiquez-le au membre.\n${wa ? 'OK = ouvrir WhatsApp (avec le mot de passe).' : ''}`,
-          )
-          if (go && wa) {
-            const appUrl = window.location.origin + '/' + SPACE_ID
-            const m =
-              `Bonjour ${r.prenom} !\n\nVotre acces a la bibliotheque a ete cree.\n\n` +
-              `--- VOS ACCES ---\nE-mail : ${email}\nMot de passe temporaire : ${pwd}\n(a changer apres connexion, dans Profil)\n\n` +
-              `Connexion : ${appUrl}\n\nMot de passe oublie ? Contactez l administrateur.`
-            window.open(`https://wa.me/${wa}?text=${encodeURIComponent(m)}`, '_blank')
-          }
-        } else {
-          alert(
-            `✅ Compte créé (code : ${abbrev}), mais la création de l'accès a échoué :\n${res.error}\n\nRéessayez via « Créer l'accès » dans la fiche du membre.`,
-          )
+      // 4. Créer l'accès auth + mot de passe temporaire (identifiant = code)
+      const res = await inviteMember(newId)
+      if (res.ok) {
+        const pwd = res.password ?? ''
+        const wa = (r.whatsapp ?? '').replace(/[^0-9+]/g, '').replace(/^\+/, '')
+        const go = confirm(
+          `✅ Compte créé pour ${r.prenom} ${r.nom}\nCode de connexion : ${abbrev}\n\nMot de passe temporaire :\n\n        ${pwd}\n\nNotez-le puis communiquez-le au membre.\n${wa ? 'OK = ouvrir WhatsApp (code + mot de passe).' : ''}`,
+        )
+        if (go && wa) {
+          const appUrl = window.location.origin + '/' + SPACE_ID
+          const m =
+            `Bonjour ${r.prenom} !\n\nVotre acces a la bibliotheque a ete cree.\n\n` +
+            `--- VOS ACCES ---\nCode de connexion : ${abbrev}\nMot de passe : ${pwd}\n(a changer apres connexion, dans Profil)\n\n` +
+            `Connexion : ${appUrl}\n\nMot de passe oublie ? Contactez l administrateur.`
+          window.open(`https://wa.me/${wa}?text=${encodeURIComponent(m)}`, '_blank')
         }
       } else {
-        alert(`✅ Compte créé (code : ${abbrev}).\n\n⚠️ Sans e-mail : saisissez son e-mail dans « Membres » puis cliquez « Créer l'accès ».`)
+        alert(
+          `✅ Compte créé (code : ${abbrev}), mais la création de l'accès a échoué :\n${res.error}\n\nRéessayez via « Réinitialiser le mot de passe » dans la fiche du membre.`,
+        )
       }
     } catch (e) {
       alert('❌ Erreur : ' + (e instanceof Error ? e.message : String(e)) + '\n\nAucun compte n\'a été créé.')

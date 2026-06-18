@@ -8,7 +8,7 @@ import { SPACE_ID } from '@/lib/space'
 export function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,11 +27,11 @@ export function Login() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!email.trim() || !password || busy) return
+    if (!code.trim() || !password || busy) return
     setBusy(true)
     setError('')
     try {
-      await login(email, password)
+      await login(code, password)
       navigate('/catalogue', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur de connexion')
@@ -52,15 +52,15 @@ export function Login() {
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-white/70">E-mail</label>
+            <label className="mb-1.5 block text-sm font-medium text-white/70">Code de connexion</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
               autoCapitalize="none"
               autoCorrect="off"
-              autoComplete="email"
-              placeholder="vous@exemple.com"
+              autoComplete="username"
+              placeholder="votre code"
               className="w-full rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-white placeholder-white/40 focus:border-comoe-light focus:outline-none focus:ring-2 focus:ring-comoe/40"
             />
           </div>

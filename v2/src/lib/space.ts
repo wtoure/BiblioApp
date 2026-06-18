@@ -75,3 +75,14 @@ const _explicit = explicitUrlSpace()
 if (_explicit) setStoredSpace(_explicit)
 
 export const SPACE_ID = resolveSpaceId()
+
+/**
+ * Identifiant de connexion = CODE (abbrev) transformé en e-mail technique
+ * déterministe pour Supabase Auth. DOIT rester identique côté Edge Functions
+ * (invite-user / sa-set-admin) et desktop (app.js _authEmail).
+ */
+export function authEmail(code: string, space: string = SPACE_ID): string {
+  const c = String(code || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  const s = String(space || '').trim().toLowerCase()
+  return `${c}.${s}@comoebiblio.app`
+}

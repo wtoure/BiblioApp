@@ -1,19 +1,26 @@
 // ════════════════════════════════════════════════════════════════
-// Edge Function : invite-user  (mode Option B — sans e-mail)
+// Edge Function : invite-user  (modèle Code + mot de passe)
 // Rôle : un ADMIN d'un espace provisionne OU réinitialise le compte
-//        d'authentification d'un membre. La fonction GÉNÈRE un mot de
-//        passe temporaire, l'applique au compte auth (création ou mise à
-//        jour), lie le compte à la ligne `users` (auth_id), puis RENVOIE
-//        ce mot de passe à l'admin (à communiquer par WhatsApp).
+//        d'authentification d'un membre. L'IDENTIFIANT de connexion est
+//        le CODE du membre (abbrev), transformé en e-mail technique
+//        `{code}.{space}@comoebiblio.app` côté Auth. La fonction GÉNÈRE
+//        un mot de passe temporaire (sauf reset_password=false), l'applique
+//        au compte auth (création ou mise à jour), lie le compte à la ligne
+//        `users` (auth_id), puis RENVOIE ce mot de passe à l'admin.
 //
-//        Aucun e-mail n'est envoyé → indépendant du SMTP (cf. Option B).
+//        Aucun e-mail réel n'est requis ni envoyé → indépendant du SMTP.
+//        L'e-mail réel éventuel de la ligne `users` reste un simple contact.
+//
+// Entrée : { space_code, user_id, reset_password? }
+//   • reset_password (défaut true) : régénère un mot de passe.
+//   • reset_password=false : resynchronise seulement l'e-mail technique
+//     (utile quand le CODE change) sans toucher au mot de passe existant.
 //
 // Sécurité :
 //   • Clé service_role (injectée par Supabase, JAMAIS commitée).
 //   • Vérifie que l'appelant est admin actif de l'espace avant d'agir.
 //
 // Déploiement :  supabase functions deploy invite-user
-//                (ou Dashboard → Edge Functions → invite-user → coller → Deploy)
 // ════════════════════════════════════════════════════════════════
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -30,7 +37,13 @@ function json(status: number, obj: unknown): Response {
   })
 }
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+// E-mail technique déterministe dérivé du code + espace.
+// Doit rester identique côté client (app.js _authEmail, v2 authEmail).
+function codeToAuthEmail(code: string, space: string): string {
+  const c = String(code || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+  const s = String(space || '').trim().toLowerCase()
+  return `${c}.${s}@comoebiblio.app`
+}
 
 // Mot de passe temporaire lisible (10 caractères, sans I/l/O/0/1 ambigus).
 function genPassword(): string {
@@ -63,10 +76,9 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}))
     const space_code = String(body.space_code ?? '').trim()
     const userId = body.user_id
-    const email = String(body.email ?? '').trim().toLowerCase()
-    if (!space_code || userId === undefined || userId === null || !email)
-      return json(400, { error: 'Paramètres manquants (space_code, user_id, email).' })
-    if (!EMAIL_RE.test(email)) return json(400, { error: 'Email invalide.' })
+    const resetPassword = body.reset_password !== false // défaut true
+    if (!space_code || userId === undefined || userId === null)
+      return json(400, { error: 'Paramètres manquants (space_code, user_id).' })
 
     // 3. Autorisation : l'appelant doit être admin actif de l'espace
     const { data: adminRow } = await admin
@@ -78,25 +90,27 @@ Deno.serve(async (req: Request) => {
     if (!adminRow || adminRow.role !== 'admin' || adminRow.disabled)
       return json(403, { error: "Réservé à un administrateur de l'espace." })
 
-    // 4. Ligne cible à rattacher
+    // 4. Ligne cible — on lit le CODE (abbrev) qui devient l'identifiant
     const { data: target, error: tErr } = await admin
       .from('users')
-      .select('id, space_code, auth_id')
+      .select('id, space_code, auth_id, abbrev')
       .eq('id', userId)
       .eq('space_code', space_code)
       .maybeSingle()
     if (tErr || !target) return json(404, { error: 'Compte cible introuvable.' })
+    if (!target.abbrev) return json(400, { error: 'Ce compte n’a pas de code (abbrev).' })
 
-    // 5. Générer le mot de passe temporaire + appliquer au compte auth
-    const password = genPassword()
-    const meta = { space_code, app_user_id: target.id }
+    const authEmail = codeToAuthEmail(target.abbrev, space_code)
+    const meta = { space_code, app_user_id: target.id, code: target.abbrev }
     let authId: string | null = target.auth_id ?? null
     let created = false
+    let password: string | null = null
 
+    // 5. Créer le compte auth si nécessaire, sinon récupérer son id
     if (!authId) {
-      // Tenter une création directe (e-mail confirmé → connexion immédiate).
+      password = genPassword()
       const { data: cr, error: crErr } = await admin.auth.admin.createUser({
-        email,
+        email: authEmail,
         password,
         email_confirm: true,
         user_metadata: meta,
@@ -105,33 +119,38 @@ Deno.serve(async (req: Request) => {
         authId = cr.user.id
         created = true
       } else {
-        // Compte déjà existant pour cet e-mail → récupérer son id.
+        // E-mail technique déjà pris (compte orphelin) → le retrouver.
         const m = (crErr?.message || '').toLowerCase()
         if (m.includes('already') || m.includes('registered') || m.includes('exist')) {
-          const { data: link } = await admin.auth.admin.generateLink({ type: 'recovery', email })
+          const { data: link } = await admin.auth.admin.generateLink({ type: 'recovery', email: authEmail })
           if (link?.user) authId = link.user.id
         }
         if (!authId) return json(500, { error: crErr?.message || 'Création du compte impossible.' })
       }
     }
 
+    // 6. Mettre à jour le compte existant : e-mail technique (sync code) + mot de passe
     if (!created && authId) {
-      // Compte existant → définir le nouveau mot de passe temporaire.
-      const { error: upErr } = await admin.auth.admin.updateUserById(authId, {
-        password,
+      const patch: { email: string; email_confirm: true; password?: string } = {
+        email: authEmail,
         email_confirm: true,
-      })
+      }
+      if (resetPassword) {
+        password = genPassword()
+        patch.password = password
+      }
+      const { error: upErr } = await admin.auth.admin.updateUserById(authId, patch)
       if (upErr) return json(500, { error: upErr.message })
     }
 
-    // 6. Lier la ligne users (auth_id + email)
+    // 7. Lier la ligne users (auth_id). L'e-mail réel (contact) n'est pas modifié ici.
     await admin
       .from('users')
-      .update({ auth_id: authId, email })
+      .update({ auth_id: authId })
       .eq('id', target.id)
       .eq('space_code', space_code)
 
-    return json(200, { ok: true, password, email, created, auth_id: authId })
+    return json(200, { ok: true, password, code: target.abbrev, created, auth_id: authId })
   } catch (e) {
     return json(500, { error: (e as Error).message })
   }

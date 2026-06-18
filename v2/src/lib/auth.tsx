@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from './supabase'
-import { SPACE_ID } from './space'
+import { SPACE_ID, authEmail } from './space'
 import { logLogin } from './loginLog'
 import type { User } from './types'
 
@@ -9,8 +9,8 @@ const PERMANENT_ROLES = ['admin', 'resident', 'commission']
 interface AuthState {
   user: User | null
   loading: boolean
-  /** Connexion email + mot de passe (Supabase Auth). */
-  login: (email: string, password: string) => Promise<User>
+  /** Connexion par CODE + mot de passe (le code est traduit en e-mail technique). */
+  login: (code: string, password: string) => Promise<User>
   logout: () => Promise<void>
   updateUser: (patch: Partial<User>) => void
   /** Recharge la ligne `users` depuis la session auth courante (post set-password). */
@@ -26,8 +26,8 @@ const AuthContext = createContext<AuthState | null>(null)
 /** Traduit les messages d'erreur Supabase Auth en français lisible. */
 function authMessage(raw: string): string {
   const m = raw.toLowerCase()
-  if (m.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.'
-  if (m.includes('email not confirmed')) return "Email non confirmé. Vérifiez votre boîte mail."
+  if (m.includes('invalid login credentials')) return 'Code ou mot de passe incorrect.'
+  if (m.includes('email not confirmed')) return 'Compte non confirmé. Contactez l’administrateur.'
   if (m.includes('rate limit') || m.includes('too many')) return 'Trop de tentatives. Réessayez dans quelques minutes.'
   return raw
 }
@@ -50,17 +50,16 @@ async function resolveAppUser(): Promise<User | null> {
     .limit(1)
   if (byId.data?.[0]) return byId.data[0] as User
 
-  if (authUser.email) {
-    const byEmail = await supabase
-      .from('users')
-      .select('*')
-      .eq('space_code', SPACE_ID)
-      .ilike('email', authUser.email)
-      .limit(1)
-    const u = byEmail.data?.[0] as User | undefined
+  // Repli : retrouver par e-mail technique (code) ou e-mail réel (legacy),
+  // puis lier auth_id au passage (best-effort).
+  const aem = (authUser.email ?? '').toLowerCase()
+  if (aem) {
+    const all = await supabase.from('users').select('*').eq('space_code', SPACE_ID)
+    const list = (all.data ?? []) as User[]
+    let u = list.find((x) => authEmail(x.abbrev, SPACE_ID) === aem)
+    if (!u) u = list.find((x) => (x.email ?? '').toLowerCase() === aem)
     if (u) {
       if (!u.auth_id) {
-        // Liaison best-effort (ne bloque pas la connexion en cas d'échec RLS).
         void supabase.from('users').update({ auth_id: authUser.id }).eq('id', u.id).eq('space_code', SPACE_ID)
       }
       return u
@@ -99,17 +98,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  async function login(email: string, password: string): Promise<User> {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    })
+  async function login(code: string, password: string): Promise<User> {
+    // Le code est l'identifiant ; on le convertit en e-mail technique.
+    // Si l'utilisateur saisit un e-mail réel (legacy), on l'accepte tel quel.
+    const raw = code.trim()
+    const email = raw.includes('@') ? raw.toLowerCase() : authEmail(raw, SPACE_ID)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw new Error(authMessage(error.message))
 
     const u = await resolveAppUser()
     if (!u) {
       await supabase.auth.signOut()
-      throw new Error('Aucun compte membre rattaché à cet email dans cette bibliothèque.')
+      throw new Error('Aucun compte membre rattaché à ce code dans cette bibliothèque.')
     }
     if (u.disabled) {
       await supabase.auth.signOut()

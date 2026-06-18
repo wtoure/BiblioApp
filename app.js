@@ -1411,10 +1411,19 @@ function _rlReset(key){localStorage.removeItem(key);}
 /* Traduit les erreurs Supabase Auth en français. */
 function _authMsg(raw){
   const m=(raw||'').toLowerCase();
-  if(m.includes('invalid login credentials'))return 'E-mail ou mot de passe incorrect.';
-  if(m.includes('email not confirmed'))return 'E-mail non confirmé. Vérifiez votre boîte mail.';
+  if(m.includes('invalid login credentials'))return 'Code ou mot de passe incorrect.';
+  if(m.includes('email not confirmed'))return 'Compte non confirmé. Contactez l\'administrateur.';
   if(m.includes('rate')||m.includes('too many'))return 'Trop de tentatives. Réessayez dans quelques minutes.';
   return raw;
+}
+
+/* Identifiant de connexion = CODE (abbrev) transformé en e-mail technique
+   déterministe pour Supabase Auth. DOIT rester identique côté Edge Functions
+   (invite-user / sa-set-admin) et v2 (lib/space.ts authEmail). */
+function _authEmail(code,space){
+  const c=String(code||'').trim().toLowerCase().replace(/[^a-z0-9]/g,'');
+  const s=String(space||SPACE_ID||'').trim().toLowerCase();
+  return c+'.'+s+'@comoebiblio.app';
 }
 
 /* Résout la ligne `users` de l'espace courant rattachée à la session auth active.
@@ -1425,9 +1434,14 @@ async function _resolveAppUser(){
   if(!au)return null;
   const byId=await sb.from('users').select('*').eq('space_code',SPACE_ID).eq('auth_id',au.id).limit(1);
   if(byId.data&&byId.data[0]){const u=byId.data[0];u.id=parseInt(u.id)||u.id;return u;}
-  if(au.email){
-    const byEmail=await sb.from('users').select('*').eq('space_code',SPACE_ID).ilike('email',au.email).limit(1);
-    const u=byEmail.data&&byEmail.data[0];
+  /* Repli : retrouver par e-mail technique (code) ou e-mail réel (legacy),
+     puis lier auth_id au passage (best-effort). */
+  const aem=(au.email||'').toLowerCase();
+  if(aem){
+    const all=await sb.from('users').select('*').eq('space_code',SPACE_ID);
+    const list=(all.data||[]);
+    let u=list.find(x=>_authEmail(x.abbrev,SPACE_ID)===aem);
+    if(!u)u=list.find(x=>(x.email||'').toLowerCase()===aem);
     if(u){
       u.id=parseInt(u.id)||u.id;
       if(!u.auth_id){sb.from('users').update({auth_id:au.id}).eq('id',u.id).eq('space_code',SPACE_ID).then(()=>{},()=>{});}
@@ -1438,12 +1452,15 @@ async function _resolveAppUser(){
 }
 
 async function doLogin(){
-  const email=(document.getElementById('li-email')?.value||'').trim().toLowerCase();
+  const raw=(document.getElementById('li-email')?.value||'').trim();
   const pwd=document.getElementById('li-pwd')?.value||'';
   const errEl=document.getElementById('le');
   const btn=document.getElementById('login-btn');
   errEl.textContent='';
-  if(!email||!pwd){errEl.textContent='Veuillez saisir votre e-mail et votre mot de passe.';return;}
+  if(!raw||!pwd){errEl.textContent='Veuillez saisir votre code et votre mot de passe.';return;}
+  /* Le code est l'identifiant ; on le convertit en e-mail technique.
+     Si l'utilisateur saisit un e-mail réel (legacy), on l'accepte tel quel. */
+  const email=raw.includes('@')?raw.toLowerCase():_authEmail(raw,SPACE_ID);
   const wait=_rlCheck('cb_rl_login');
   if(wait>0){errEl.textContent='Trop de tentatives. Réessayez dans '+wait+' secondes.';return;}
   if(btn)btn.disabled=true;
@@ -1453,7 +1470,7 @@ async function doLogin(){
     const {error:authErr}=await sb.auth.signInWithPassword({email,password:pwd});
     if(authErr){errEl.textContent=_authMsg(authErr.message);return;}
     const u=await _resolveAppUser();
-    if(!u){await sb.auth.signOut();errEl.textContent='Aucun compte membre rattaché à cet e-mail dans cette bibliothèque.';return;}
+    if(!u){await sb.auth.signOut();errEl.textContent='Aucun compte membre rattaché à ce code dans cette bibliothèque.';return;}
     if(u.disabled){await sb.auth.signOut();errEl.textContent='Ce compte est désactivé. Contactez l\'administrateur.';return;}
     /* Vérifier expiration du compte */
     const todayLoginStr=new Date().toISOString().split('T')[0];
@@ -1581,20 +1598,25 @@ function _setUfAuthStatus(hasAuth,showBtn){
    le communiquer par WhatsApp. */
 async function invManFromForm(){
   if(!ufEid){alert('Enregistrez d\'abord le compte, puis rouvrez-le.');return;}
-  const em=(document.getElementById('ufemail')?.value||'').trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){alert('Saisissez un e-mail valide d\'abord (il sert d\'identifiant de connexion).');return;}
+  const u=users.find(x=>String(x.id)===String(ufEid));
+  const code=u?u.abbrev:'';
   const btn=document.getElementById('uf-invite-btn');
   if(btn){btn.disabled=true;btn.textContent='Traitement…';}
   try{
-    await sbUpd('users',ufEid,{email:em});
-    const i=users.findIndex(u=>String(u.id)===String(ufEid));if(i>=0)users[i].email=em;
-    const res=await _inviteMember(ufEid,em);
+    /* E-mail réel = simple contact (facultatif) — on l'enregistre s'il est fourni. */
+    const em=(document.getElementById('ufemail')?.value||'').trim().toLowerCase();
+    if(em&&/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){
+      await sbUpd('users',ufEid,{email:em});
+      const j=users.findIndex(x=>String(x.id)===String(ufEid));if(j>=0)users[j].email=em;
+    }
+    const res=await _inviteMember(ufEid);
     if(res.ok){
+      const i=users.findIndex(x=>String(x.id)===String(ufEid));
       if(i>=0)users[i].auth_id=users[i].auth_id||'pending';
       _setUfAuthStatus(true,true);
       const pwd=res.password||'';
-      const act=res.created?'Compte créé':'Mot de passe réinitialisé';
-      const go=confirm('✅ '+act+' pour '+em+'\n\nMot de passe temporaire :\n\n        '+pwd+'\n\nNotez-le puis communiquez-le au membre.\nOK = préparer le message WhatsApp (avec le mot de passe).');
+      const act=res.created?'Accès créé':'Mot de passe réinitialisé';
+      const go=confirm('✅ '+act+' pour le code « '+code+' »\n\nMot de passe temporaire :\n\n        '+pwd+'\n\nNotez-le puis communiquez-le au membre.\nOK = préparer le message WhatsApp (code + mot de passe).');
       if(go)shareAccess(ufEid,pwd);
     }else{
       alert('❌ '+res.error);
@@ -1602,20 +1624,22 @@ async function invManFromForm(){
   }catch(e){alert('❌ Erreur : '+e.message);}
   finally{
     if(btn)btn.disabled=false;
-    const cur=users.find(u=>String(u.id)===String(ufEid));
+    const cur=users.find(x=>String(x.id)===String(ufEid));
     _setUfAuthStatus(!!(cur&&cur.auth_id),true);
   }
 }
 
-/* ── Créer/réinitialiser l'accès via l'Edge Function invite-user (Option B).
-   Renvoie {ok, password, created} — aucun e-mail n'est envoyé. ── */
-async function _inviteMember(userId,email){
+/* ── Créer/réinitialiser l'accès via l'Edge Function invite-user.
+   L'identifiant est le CODE du membre (résolu côté fonction). Renvoie
+   {ok, password, created} — aucun e-mail n'est envoyé.
+   opts.reset===false → resynchronise l'e-mail technique sans changer le mot
+   de passe (utilisé quand le code change). ── */
+async function _inviteMember(userId,opts){
   _initSb();
-  const em=(email||'').trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em))return{ok:false,error:'E-mail invalide.'};
+  const reset=!(opts&&opts.reset===false);
   try{
     const {data,error}=await sb.functions.invoke('invite-user',{body:{
-      space_code:SPACE_ID,user_id:userId,email:em
+      space_code:SPACE_ID,user_id:userId,reset_password:reset
     }});
     if(error){
       const ctx=error.context;let msg=error.message;
@@ -3386,28 +3410,22 @@ function shareAccess(id,tempPwd){
   let msg='Bonjour ' + u.prenom + ' !\n\n';
   msg+='Bienvenue a ' + libName + ' ! Votre compte a ete cree.\n\n';
   msg+='--- VOS ACCES ---\n';
-  msg+='Votre code membre : ' + u.abbrev + '\n';
-  if(u.email)msg+='E-mail (pour se connecter) : ' + u.email + '\n';
+  msg+='Votre code de connexion : ' + u.abbrev + '\n';
+  if(tempPwd)msg+='Mot de passe : ' + tempPwd + '\n';
   msg+='Role : ' + roleLabel + '\n\n';
   msg+='--- CE QUE VOUS POUVEZ FAIRE ---\n';
   caps.forEach(c=>{msg+=c.title+'\n'+c.desc+'\n\n';});
   msg+='--- COMMENT SE CONNECTER ---\n';
-  if(u.email){
-    msg+='1. Ouvrez ce lien (telephone ou ordinateur) :\n' + appUrl + '\n';
-    msg+='2. E-mail : ' + u.email + '\n';
-    if(tempPwd){
-      msg+='3. Mot de passe temporaire : ' + tempPwd + '\n';
-      msg+='   (vous pourrez le changer apres connexion, dans Profil)\n\n';
-    }else{
-      msg+='3. Mot de passe : celui qui vous a ete communique.\n\n';
-    }
-    msg+='Mot de passe oublie ? Contactez l administrateur'+adminContact+'\n';
-    msg+='qui vous en redonnera un nouveau.\n\n';
+  msg+='1. Ouvrez ce lien (telephone ou ordinateur) :\n' + appUrl + '\n';
+  msg+='2. Code : ' + u.abbrev + '\n';
+  if(tempPwd){
+    msg+='3. Mot de passe : ' + tempPwd + '\n';
+    msg+='   (vous pourrez le changer apres connexion, dans Profil)\n\n';
   }else{
-    msg+='Pour activer votre acces, communiquez d abord une adresse\n';
-    msg+='e-mail a l administrateur'+adminContact+'. Il creera votre\n';
-    msg+='connexion et vous transmettra un mot de passe.\n\n';
+    msg+='3. Mot de passe : celui qui vous a ete communique.\n\n';
   }
+  msg+='Mot de passe oublie ? Contactez l administrateur'+adminContact+'\n';
+  msg+='qui vous en redonnera un nouveau.\n\n';
   msg+='L application fonctionne sur telephone ET sur ordinateur.\n\n';
   msg+='A bientot a ' + libName + ' !';
 
@@ -3741,6 +3759,8 @@ async function savU(){if(!_requirePrivileged('savU'))return;
   if(ufEid){
     const existing=users.find(u=>u.id==ufEid);
     if(existing&&existing.role==='admin'&&rl!=='admin'&&countAdmins()<=1){document.getElementById('ufe').textContent='⚠️ Seul administrateur.';return;}
+    const prevAbbrev=existing?existing.abbrev:'';
+    const hadAuth=!!(existing&&existing.auth_id);
     const i=users.findIndex(u=>u.id==ufEid);
     if(i>=0)users[i]={...users[i],abbrev:ab,prenom:pn,nom:nm,role:rl,canPropose:cp,...extras};
     const isNeverExp=document.getElementById('uf-never-expires')?.checked||false;
@@ -3752,6 +3772,16 @@ async function savU(){if(!_requirePrivileged('savU'))return;
     else if(isNeverExp){updFields.expiresAt=null;}else if(expUpdVal){updFields.expiresAt=expUpdVal;}
     if(i>=0){users[i].neverExpires=isPermanentRole||isNeverExp;if(!isPermanentRole&&expUpdVal)users[i].expiresAt=expUpdVal;if(isPermanentRole)users[i].expiresAt=null;}
     try{await sbUpd('users',ufEid,updFields);_cachePut({users});}catch(e){console.error(e);alert('❌ Erreur de mise à jour : '+e.message);}
+    /* Le code (abbrev) est l'identifiant de connexion : s'il change et que le
+       membre a déjà un accès, resynchroniser l'e-mail technique côté Auth
+       (sans réinitialiser son mot de passe). */
+    if(hadAuth&&ab!==prevAbbrev){
+      try{
+        const sync=await _inviteMember(ufEid,{reset:false});
+        if(!sync.ok)alert('⚠️ Code enregistré, mais la connexion n\'a pas pu être resynchronisée : '+sync.error+'\n\nUtilisez « Réinitialiser le mot de passe » pour rétablir l\'accès.');
+        else _showSyncToast('🔑 Identifiant de connexion mis à jour');
+      }catch(e){alert('⚠️ Code enregistré, mais resynchronisation impossible : '+e.message);}
+    }
   } else {
     /* ── Création d'un nouveau compte ── */
     /* 1. Lire le compteur frais depuis Supabase pour éviter les collisions entre sessions */
@@ -5274,10 +5304,7 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
   const role=document.getElementById('reg-role-'+id)?.value||'member';
   const abbrev=_genAbbrev(reg.prenom,reg.nom);
   const regEmail=(reg.email||'').trim().toLowerCase();
-  if(!regEmail){
-    alert('Cette demande n\'a pas d\'e-mail. L\'e-mail est désormais nécessaire pour la connexion. Le compte sera créé, mais vous devrez saisir son e-mail puis l\'inviter depuis la gestion des membres.');
-  }
-  if(!confirm(`Créer le compte de ${reg.prenom} ${reg.nom} ?\n\nRôle : ${role}\nCode : ${abbrev}\n${regEmail?`Une invitation sera envoyée à ${regEmail} pour définir le mot de passe.`:'⚠️ Sans e-mail, le membre ne pourra pas se connecter tant qu\'il ne sera pas invité.'}`))return;
+  if(!confirm(`Créer le compte de ${reg.prenom} ${reg.nom} ?\n\nRôle : ${role}\nCode de connexion : ${abbrev}\n\nUn mot de passe sera généré : vous le communiquerez au membre (WhatsApp). Aucun e-mail n'est requis.`))return;
 
   /* 1. Compteur frais depuis Supabase pour éviter collisions entre sessions */
   try{const d=await sbGetDoc('counters','main');if(d&&d.nxU)nxU=Math.max(nxU,parseInt(d.nxU)||nxU);}catch(e){}
@@ -5304,17 +5331,13 @@ async function approveRegistration(id){if(!_requireAdmin('approveRegistration'))
     rAdmRegistrations();
     try{rAdmUs();}catch(e){}
     _showSyncToast('✅ Compte créé — code : '+abbrev);
-    /* 6. Créer l'accès auth + mot de passe temporaire (Option B, sans e-mail) */
-    if(regEmail){
-      const res=await _inviteMember(newId,regEmail);
-      if(res.ok){
-        const go=confirm(`✅ Compte créé pour ${reg.prenom} ${reg.nom}\nE-mail : ${regEmail}\n\nMot de passe temporaire :\n\n        ${res.password||''}\n\nNotez-le puis communiquez-le au membre.\nOK = préparer le message WhatsApp (avec le mot de passe).`);
-        if(go)shareAccess(newId,res.password||'');
-      }else{
-        alert(`✅ Compte créé (code : ${abbrev}), mais la création de l'accès a échoué :\n${res.error}\n\nRéessayez via « Créer l'accès » dans la gestion des membres.`);
-      }
+    /* 6. Créer l'accès auth + mot de passe temporaire (identifiant = code) */
+    const res=await _inviteMember(newId);
+    if(res.ok){
+      const go=confirm(`✅ Compte créé pour ${reg.prenom} ${reg.nom}\nCode de connexion : ${abbrev}\n\nMot de passe temporaire :\n\n        ${res.password||''}\n\nNotez-le puis communiquez-le au membre.\nOK = préparer le message WhatsApp (code + mot de passe).`);
+      if(go)shareAccess(newId,res.password||'');
     }else{
-      alert(`✅ Compte créé (code : ${abbrev}).\n\n⚠️ Sans e-mail : saisissez son e-mail puis cliquez « Créer l'accès » dans la gestion des membres.`);
+      alert(`✅ Compte créé (code : ${abbrev}), mais la création de l'accès a échoué :\n${res.error}\n\nRéessayez via « Réinitialiser le mot de passe » dans la gestion des membres.`);
     }
   }catch(e){
     console.error('[approveRegistration]',e.message);

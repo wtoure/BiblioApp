@@ -207,19 +207,19 @@
           <input class="fi fi-d" id="n-tag" placeholder="Bibliothèque · Centre Lumière"/>
         </div>
         <div class="fg">
-          <label>Code admin initial <span style="color:var(--err)">*</span></label>
+          <label>Code de connexion admin <span style="color:var(--err)">*</span></label>
           <input class="fi fi-d" id="n-adm" placeholder="admin, directeur…" autocapitalize="none" spellcheck="false" autocomplete="off" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')"/>
-          <p class="note">Identifiant interne du premier administrateur</p>
-        </div>
-        <div class="fg">
-          <label>E-mail admin <span style="color:var(--err)">*</span></label>
-          <input class="fi fi-d" id="n-adm-email" type="email" placeholder="admin@exemple.com" autocapitalize="none" spellcheck="false" autocomplete="off"/>
-          <p class="note">Servira à se connecter à la bibliothèque (e-mail + mot de passe)</p>
+          <p class="note">Identifiant de connexion du premier administrateur (code + mot de passe)</p>
         </div>
         <div class="fg">
           <label>Mot de passe admin <span style="color:var(--err)">*</span></label>
           <input class="fi fi-d" id="n-adm-pwd" type="text" placeholder="8 caractères minimum" autocapitalize="none" spellcheck="false" autocomplete="new-password"/>
           <p class="note">À communiquer à l'administrateur (il pourra le changer ensuite)</p>
+        </div>
+        <div class="fg">
+          <label>E-mail admin (facultatif)</label>
+          <input class="fi fi-d" id="n-adm-email" type="email" placeholder="admin@exemple.com (optionnel)" autocapitalize="none" spellcheck="false" autocomplete="off"/>
+          <p class="note">Simple contact — n'est pas nécessaire pour se connecter</p>
         </div>
         <div class="fg">
           <label>Couleur d'accent</label>
@@ -309,18 +309,19 @@
         </div>
       </div>
       <div class="fg" style="border-top:1px solid var(--border);padding-top:14px;margin-top:8px">
-        <label>👤 E-mail administrateur</label>
-        <input class="fi" id="e-adm-email" type="email" placeholder="admin@exemple.com" autocapitalize="none" spellcheck="false" autocomplete="off"/>
-        <p class="note">E-mail de connexion de l'admin de cette bibliothèque</p>
-      </div>
-      <div class="fg">
-        <label>🔑 Code administrateur</label>
+        <label>🔑 Code de connexion administrateur</label>
         <input class="fi" id="e-adm-code" placeholder="admin…" autocapitalize="none" spellcheck="false" autocomplete="off" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9]/g,'')"/>
+        <p class="note">Identifiant de connexion de l'admin (code + mot de passe). Le modifier resynchronise la connexion.</p>
       </div>
       <div class="fg">
         <label>🔒 Nouveau mot de passe admin <span style="color:var(--muted);font-weight:400">(optionnel)</span></label>
         <input class="fi" id="e-adm-pwd" type="text" placeholder="Laisser vide pour ne pas changer (8 car. min.)" autocapitalize="none" spellcheck="false" autocomplete="new-password"/>
         <p class="note">Si renseigné : définit / réinitialise le mot de passe de connexion (compte existant ou nouveau)</p>
+      </div>
+      <div class="fg">
+        <label>👤 E-mail administrateur <span style="color:var(--muted);font-weight:400">(facultatif)</span></label>
+        <input class="fi" id="e-adm-email" type="email" placeholder="admin@exemple.com (optionnel)" autocapitalize="none" spellcheck="false" autocomplete="off"/>
+        <p class="note">Simple contact — n'est pas nécessaire pour se connecter</p>
       </div>
       <p id="e-err" style="color:var(--err);font-size:13px;min-height:16px"></p>
     </div>
@@ -383,12 +384,13 @@ async function sbDel(table,match){
   if(error)throw new Error(error.message);
 }
 
-/* Définit/réinitialise le mot de passe de connexion d'un admin via l'Edge
-   Function sa-set-admin (autorisée par le mot de passe maître super-admin).
+/* Définit/réinitialise le CODE et/ou le mot de passe de connexion d'un admin
+   via l'Edge Function sa-set-admin (autorisée par le mot de passe maître
+   super-admin). L'identifiant de connexion est le CODE (abbrev).
    Fonctionne pour un compte existant comme nouveau. */
-async function saSetAdmin(space_code,email,password){
+async function saSetAdmin(space_code,code,password){
   const {data,error}=await _sb().functions.invoke('sa-set-admin',{body:{
-    sa_password:window._saPwd||'',space_code,email,password
+    sa_password:window._saPwd||'',space_code,code,password
   }});
   if(error){
     let msg=error.message;const ctx=error.context;
@@ -609,11 +611,12 @@ function openEdit(s){
 function shareSpaceLinks(code){
   if(!code)return;
   const s=(window._spacesCache||[]).find(x=>x.code===code)||{};
-  const em=(window._adminEmails||{})[code]||(document.getElementById('e-adm-email')?.value||'').trim().toLowerCase();
+  const admCode=((window._adminCodes||{})[code]||'').replace(/^N\/A$/,'')||(document.getElementById('e-adm-code')?.value||'').trim().toLowerCase();
   const dOrigin=window.location.origin;
   const name=s.name||s.short||code;
   let m='Acces a la bibliotheque "'+name+'"\n\n';
-  if(em)m+='E-mail de connexion (admin) : '+em+'\n\n';
+  if(admCode)m+='Code de connexion (admin) : '+admCode+'\n';
+  m+='Mot de passe : celui qui vous a ete communique\n\n';
   m+='--- APPLICATION MOBILE ---\n';
   m+='Connexion : '+V2_BASE+'/'+code+'\n';
   m+='Catalogue public : '+V2_BASE+'/book/'+code+'\n\n';
@@ -641,23 +644,22 @@ async function saveEdit(){
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>Enregistrement…';
   try{
     await sbUpd('spaces',{code},{name,short,tagline:tag||name,color});
-    /* Mettre à jour l'admin (id=1) de cet espace : e-mail + code */
-    const admPatch={};
-    if(admEmail)admPatch.email=admEmail;
-    if(admCode)admPatch.abbrev=admCode;
-    if(Object.keys(admPatch).length)await sbUpd('users',{space_code:code,id:1},admPatch);
-    /* Définir/réinitialiser le mot de passe de connexion si fourni (Edge Function) */
+    /* Mettre à jour l'admin (id=1) de cet espace : e-mail de contact (facultatif).
+       Le CODE (abbrev) est synchronisé via l'Edge Function sa-set-admin pour
+       rester cohérent avec l'identifiant de connexion. */
+    if(admEmail)await sbUpd('users',{space_code:code,id:1},{email:admEmail});
+    /* Le code de connexion est l'identifiant. On (re)provisionne l'accès dès
+       que le code change OU qu'un mot de passe est fourni. */
     let authNote='';
-    if(admPwd&&admEmail){
+    const prevCode=((window._adminCodes||{})[code]||'').replace(/^N\/A$/,'');
+    if(admCode&&(admCode!==prevCode||admPwd)){
       try{
-        const r=await saSetAdmin(code,admEmail,admPwd);
-        if(!r.ok)authNote='\n\n⚠️ Mot de passe non appliqué : '+r.error;
-      }catch(e){authNote='\n\n⚠️ Mot de passe non appliqué : '+e.message;}
-    }
-    /* E-mail changé sans mot de passe → le compte Auth garde l'ancien e-mail */
-    const prevEmail=(window._adminEmails||{})[code]||'';
-    if(admEmail&&admEmail!==prevEmail&&!admPwd){
-      authNote+='\n\n⚠️ E-mail modifié sans mot de passe : indiquez aussi un mot de passe pour (ré)activer la connexion avec ce nouvel e-mail.';
+        const r=await saSetAdmin(code,admCode,admPwd);
+        if(!r.ok)authNote='\n\n⚠️ Connexion non mise à jour : '+r.error;
+      }catch(e){authNote='\n\n⚠️ Connexion non mise à jour : '+e.message;}
+    }else if(admCode){
+      /* Pas de changement de code ni de mot de passe : juste garder abbrev à jour */
+      await sbUpd('users',{space_code:code,id:1},{abbrev:admCode});
     }
     cM('m-edit');
     loadSpaces();
@@ -801,10 +803,10 @@ async function createSpace(){
   const sucEl=document.getElementById('c-suc');
   const btn  =document.getElementById('c-btn');
   errEl.textContent='';sucEl.style.display='none';
-  if(!code||!name||!short||!adm||!admEmail||!admPwd){errEl.textContent='Tous les champs * sont obligatoires.';return;}
+  if(!code||!name||!short||!adm||!admPwd){errEl.textContent='Tous les champs * sont obligatoires.';return;}
   if(!/^[a-z0-9-]+$/.test(code)){errEl.textContent='Code invalide (minuscules, chiffres, tirets).';return;}
   if(!/^[a-z0-9]+$/.test(adm)){errEl.textContent='Code admin invalide (lettres et chiffres uniquement).';return;}
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(admEmail)){errEl.textContent='E-mail admin invalide.';return;}
+  if(admEmail&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(admEmail)){errEl.textContent='E-mail admin invalide.';return;}
   if(admPwd.length<8){errEl.textContent='Mot de passe admin : 8 caractères minimum.';return;}
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>Vérification…';
   try{
@@ -826,27 +828,27 @@ async function createSpace(){
     /* 3. Compteurs */
     await sbIns('space_counters',{space_code:code,nxB:1,nxU:2,nxR:1,nxS:1,nxL:1,nxSC:1,nxReg:1});
 
-    /* 4. Utilisateur admin (avec e-mail de connexion) */
+    /* 4. Utilisateur admin (code = identifiant ; e-mail = contact facultatif) */
     await sbIns('users',{
       id:1,space_code:code,abbrev:adm,prenom:'Administrateur',nom:name,
-      role:'admin',canPropose:true,disabled:false,profession:'',whatsapp:'',commune:'',email:admEmail,
+      role:'admin',canPropose:true,disabled:false,profession:'',whatsapp:'',commune:'',email:admEmail||null,
       neverExpires:true,tabs:[],assignedShelves:[],spiritualAccess:false,canLoan:false
     });
 
-    /* 5. Compte de connexion (e-mail + mot de passe) via Edge Function sa-set-admin
+    /* 5. Compte de connexion (code + mot de passe) via Edge Function sa-set-admin
        (crée le compte auth confirmé, mot de passe défini, lié à la ligne users). */
     let authNote='';
     try{
-      const r=await saSetAdmin(code,admEmail,admPwd);
+      const r=await saSetAdmin(code,adm,admPwd);
       if(!r.ok)authNote='Compte de connexion non créé : '+r.error;
     }catch(e){authNote='Compte de connexion non créé ('+e.message+').';}
 
     const url=`${window.location.origin}/${code}`;
     const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     sucEl.innerHTML=`✅ <strong>Bibliothèque "${esc(name)}" créée !</strong><br>🔗 <a href="${url}" target="_blank" style="color:var(--ok);font-weight:700">${url}</a><br>`+
-      `👤 Connexion admin :<br>&nbsp;&nbsp;E-mail : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${esc(admEmail)}</code>`+
+      `👤 Connexion admin :<br>&nbsp;&nbsp;Code : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${esc(adm)}</code>`+
       `<br>&nbsp;&nbsp;Mot de passe : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${esc(admPwd)}</code>`+
-      `<br>&nbsp;&nbsp;Code interne : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${esc(adm)}</code>`+
+      `<br>&nbsp;&nbsp;Connexion : <code style="background:rgba(34,197,94,.15);padding:2px 8px;border-radius:5px">${esc(url)}</code>`+
       (authNote?`<br><span style="color:#fbbf24">⚠️ ${esc(authNote)}</span>`:'');
     sucEl.style.display='block';
     clearForm();loadSpaces();
