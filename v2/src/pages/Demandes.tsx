@@ -43,6 +43,41 @@ export function Demandes() {
     return m
   }, [users])
 
+  const userWhatsApp = useMemo(() => {
+    const m = new Map<number, string>()
+    ;(users ?? []).forEach((u) => m.set(u.id, u.whatsapp ?? ''))
+    return m
+  }, [users])
+
+  function notifyByWhatsApp(r: BookRequest, status: 'approved' | 'rejected') {
+    const wa = (userWhatsApp.get(r.dem ?? -1) ?? '').replace(/[^0-9+]/g, '').replace(/^\+/, '')
+    if (!wa) {
+      alert('Ce membre n\'a pas de numéro WhatsApp enregistré.')
+      return
+    }
+    const name = (userName.get(r.dem ?? -1) ?? 'Membre').split(' ')[0]
+    let m: string
+    if (status === 'approved') {
+      m =
+        `Bonjour ${name} !\n\n` +
+        `Bonne nouvelle ! Votre demande de livre a ete APPROUVEE.\n\n` +
+        `📚 « ${r.titre} »` +
+        (r.auteur ? `\nAuteur : ${r.auteur}` : '') +
+        `\n\n✅ Nous ferons le necessaire pour acquerir ce livre.\n\n` +
+        `Bibliotheque Centre Culturel Comoe`
+    } else {
+      m =
+        `Bonjour ${name} !\n\n` +
+        `Votre demande de livre a ete REFUSEE.\n\n` +
+        `📚 « ${r.titre} »` +
+        (r.auteur ? `\nAuteur : ${r.auteur}` : '') +
+        (r.note ? `\n\nMotif : ${r.note}` : '') +
+        `\n\nNous ne sommes pas en mesure d'acquerir ce livre pour le moment.\n\n` +
+        `Bibliotheque Centre Culturel Comoe`
+    }
+    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(m)}`, '_blank')
+  }
+
   const list = useMemo(() => {
     let l = requests ?? []
     if (filter !== 'all') l = l.filter((r) => r.status === filter)
@@ -106,7 +141,16 @@ export function Demandes() {
           {isLoading && <p className="py-10 text-center text-slate-400">Chargement…</p>}
           <ul className="space-y-2 pb-4">
             {list.map((r) => (
-              <li key={r.id} className="rounded-xl border border-slate-100 bg-white p-3 shadow-card">
+              <li
+                key={r.id}
+                className={`rounded-xl border p-3 shadow-card ${
+                  r.status === 'approved'
+                    ? 'border-green-300 bg-green-50'
+                    : r.status === 'rejected'
+                      ? 'border-red-300 bg-red-50'
+                      : 'border-slate-100 bg-white'
+                }`}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-slate-800">{r.titre}</div>
@@ -115,7 +159,7 @@ export function Demandes() {
                       {r.dem != null ? userName.get(r.dem) ?? 'Demandeur inconnu' : '—'} · {r.date}
                     </div>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_BADGE[r.status].cls}`}>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS_BADGE[r.status].cls}`}>
                     {STATUS_BADGE[r.status].label}
                   </span>
                 </div>
@@ -125,15 +169,31 @@ export function Demandes() {
                       onClick={() => changeStatus(r, 'approved')}
                       className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-semibold text-white active:opacity-90"
                     >
-                      Approuver
+                      ✅ Approuver
                     </button>
                     <button
                       onClick={() => changeStatus(r, 'rejected')}
                       className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white active:opacity-90"
                     >
-                      Rejeter
+                      ❌ Rejeter
                     </button>
                   </div>
+                )}
+                {isManager && r.status === 'approved' && r.dem != null && (
+                  <button
+                    onClick={() => notifyByWhatsApp(r, 'approved')}
+                    className="mt-2 w-full rounded-lg bg-green-600 py-2 text-sm font-semibold text-white active:opacity-90"
+                  >
+                    📲 Envoyer l'approbation par WhatsApp
+                  </button>
+                )}
+                {isManager && r.status === 'rejected' && r.dem != null && (
+                  <button
+                    onClick={() => notifyByWhatsApp(r, 'rejected')}
+                    className="mt-2 w-full rounded-lg bg-red-600 py-2 text-sm font-semibold text-white active:opacity-90"
+                  >
+                    📲 Envoyer le refus par WhatsApp
+                  </button>
                 )}
               </li>
             ))}

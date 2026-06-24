@@ -25,6 +25,7 @@ export interface Book {
   annee: number | null
   expl: number
   ancienNouv?: string
+  etat?: string
   emoji: string
   featured: boolean
   status: 'available' | 'borrowed' | 'retired' | 'missing'

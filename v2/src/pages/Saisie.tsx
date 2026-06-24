@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/PageHeader'
 import { SectionPicker, type Section } from '@/components/SectionPicker'
@@ -27,6 +27,10 @@ const EMPTY_FORM = {
   expl: '1',
   editeur: '',
   resume: '',
+  ancienNouv: '',
+  etat: '',
+  emoji: '📖',
+  featured: false,
 }
 
 type BookForm = typeof EMPTY_FORM
@@ -48,6 +52,10 @@ function bookToForm(b: Book): BookForm {
     expl: String(b.expl ?? 1),
     editeur: b.editeur ?? '',
     resume: b.resume ?? '',
+    ancienNouv: b.ancienNouv ?? '',
+    etat: b.etat ?? '',
+    emoji: b.emoji ?? '📖',
+    featured: b.featured ?? false,
   }
 }
 
@@ -93,6 +101,7 @@ function BookForm({
   onSaved?: () => void
 }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const isEdit = !!editBook
   const [form, setForm] = useState<BookForm>(editBook ? bookToForm(editBook) : EMPTY_FORM)
   const [err, setErr] = useState('')
@@ -134,6 +143,10 @@ function BookForm({
       expl: parseInt(form.expl) || 1,
       editeur: form.editeur.trim(),
       resume: form.resume.trim(),
+      ancienNouv: form.ancienNouv,
+      etat: form.etat,
+      emoji: form.emoji || '📖',
+      featured: form.featured,
       updatedAt: now,
       updatedBy: who,
       lastModifiedBy: user ? `${user.prenom} ${user.nom}` : '?',
@@ -171,8 +184,7 @@ function BookForm({
         const { error: bErr } = await supabase.from('books').insert(nb)
         if (bErr) throw new Error(bErr.message)
         qc.invalidateQueries({ queryKey: ['books', SPACE_ID] })
-        setDone(`« ${titre} » ajouté (ID ${newId}).`)
-        setForm(EMPTY_FORM)
+        navigate(`/livre/${newId}`)
       }
       onSaved?.()
     } catch (e) {
@@ -249,11 +261,42 @@ function BookForm({
         <FField label="Éditeur">
           <input value={form.editeur} onChange={set('editeur')} className="field-input" placeholder="Nom de l'éditeur" />
         </FField>
+        <FField label="État">
+          <input value={form.etat} onChange={set('etat')} className="field-input" placeholder="ex. Bon, Usé…" />
+        </FField>
+        <FField label="Ancien / Nouveau">
+          <select value={form.ancienNouv} onChange={set('ancienNouv')} className="field-input">
+            <option value="">—</option>
+            <option value="Ancien">Ancien</option>
+            <option value="Nouveau">Nouveau</option>
+            <option value="Récent">Récent</option>
+          </select>
+        </FField>
+        <FField label="Emoji">
+          <input value={form.emoji} onChange={set('emoji')} className="field-input" placeholder="📖" />
+        </FField>
         <FField label="Résumé">
           <textarea value={form.resume} onChange={set('resume')} className="field-input min-h-[80px] resize-none"
             placeholder="Résumé ou notes…" rows={3} />
         </FField>
       </FSection>
+
+      <div className="rounded-2xl bg-white p-4 shadow-card">
+        <label className="flex cursor-pointer items-center gap-3">
+          <div className="relative">
+            <input
+              type="checkbox"
+              checked={form.featured}
+              onChange={(e) => setForm((prev) => ({ ...prev, featured: e.target.checked }))}
+              className="sr-only"
+            />
+            <div className={`h-6 w-11 rounded-full transition-colors ${form.featured ? 'bg-amber-400' : 'bg-slate-200'}`} />
+            <div className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.featured ? 'translate-x-5' : ''}`} />
+          </div>
+          <span className="text-sm font-medium text-slate-700">⭐ Mettre en avant</span>
+        </label>
+        <p className="mt-1 text-xs text-slate-400 pl-14">Le livre apparaîtra en tête du catalogue.</p>
+      </div>
 
       {err && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{err}</p>}
 
